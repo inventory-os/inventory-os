@@ -20,6 +20,19 @@ function normalizeReturnTo(value: string): string {
   return value
 }
 
+function resolveAppOrigin(request: NextRequest): string {
+  const configuredDomain = process.env.APP_DOMAIN?.trim()
+  if (configuredDomain) {
+    try {
+      return new URL(configuredDomain).origin
+    } catch {
+      // Fall through to request origin.
+    }
+  }
+
+  return request.nextUrl.origin
+}
+
 export async function GET(request: NextRequest) {
   const blocked = await ensureTrustedNetwork(request)
   if (blocked) {
@@ -107,7 +120,7 @@ export async function GET(request: NextRequest) {
       roles: user.roles,
     })
 
-    const response = NextResponse.redirect(new URL(returnTo, request.url))
+    const response = NextResponse.redirect(new URL(returnTo, resolveAppOrigin(request)))
     const secure = process.env.NODE_ENV === "production"
 
     response.cookies.set(SESSION_COOKIE_NAME, token, {

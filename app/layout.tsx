@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next"
 import { headers } from "next/headers"
 import { Inter, JetBrains_Mono } from "next/font/google"
-import { Analytics } from "@vercel/analytics/next"
 import { AppProviders } from "@/components/providers"
 import { getEffectiveSecuritySettings } from "@/lib/services"
 import { isTrustedDomain, isTrustedProxyChain } from "@/lib/utils/security-utils"
@@ -71,7 +70,6 @@ export default async function RootLayout({
             </div>
           </main>
         )}
-        <Analytics />
       </body>
     </html>
   )

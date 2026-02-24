@@ -1,6 +1,6 @@
 {
   "name": "inventory-os",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -55,7 +55,6 @@
     "@trpc/client": "^11.10.0",
     "@trpc/react-query": "^11.10.0",
     "@trpc/server": "^11.10.0",
-    "@vercel/analytics": "1.6.1",
     "autoprefixer": "^10.4.20",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.6.2",

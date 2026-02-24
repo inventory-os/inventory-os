@@ -46,11 +46,11 @@ export function PageHeader({ title, breadcrumbs }: PageHeaderProps) {
   }
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-3 border-b border-border/70 bg-background/80 px-5 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header className="sticky top-0 z-20 flex min-h-16 shrink-0 items-center gap-3 border-b border-border/70 bg-background/80 px-5 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <SidebarTrigger className="-ml-1 md:hidden" />
       <Separator orientation="vertical" className="mr-2 h-4 md:hidden" />
 
-      <div className="hidden min-w-0 flex-col md:flex">
+      <div className="hidden min-w-0 flex-1 flex-col md:flex">
         <span className="truncate text-sm font-semibold tracking-tight">{title}</span>
         <Breadcrumb>
           <BreadcrumbList>
@@ -86,7 +86,7 @@ export function PageHeader({ title, breadcrumbs }: PageHeaderProps) {
             ))}
           </SelectContent>
         </Select>
-        <div className="relative hidden md:block">
+        <div className="relative hidden lg:block">
           <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}

@@ -105,6 +105,19 @@ function isMemberBlockedApi(pathname: string): boolean {
   return MEMBER_API_MANAGEMENT_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
 }
 
+function resolveAppOrigin(request: NextRequest): string {
+  const configuredDomain = process.env.APP_DOMAIN?.trim()
+  if (configuredDomain) {
+    try {
+      return new URL(configuredDomain).origin
+    } catch {
+      // Fall through to request origin.
+    }
+  }
+
+  return request.nextUrl.origin
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
@@ -126,7 +139,7 @@ export async function proxy(request: NextRequest) {
           return NextResponse.json({ error: "Forbidden" }, { status: 403 })
         }
       } else if (isMemberBlockedPage(pathname)) {
-        return NextResponse.redirect(new URL("/", request.url))
+        return NextResponse.redirect(new URL("/", resolveAppOrigin(request)))
       }
     }
 
@@ -137,7 +150,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const loginUrl = new URL("/api/auth/login", request.url)
+  const loginUrl = new URL("/api/auth/login", resolveAppOrigin(request))
   loginUrl.searchParams.set("returnTo", `${pathname}${request.nextUrl.search}`)
   return NextResponse.redirect(loginUrl)
 }

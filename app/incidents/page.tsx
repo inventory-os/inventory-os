@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { MoreHorizontal, ShieldAlert } from "lucide-react"
@@ -29,6 +29,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useAppRuntime } from "@/components/app-runtime-provider"
 import { useCurrentUser } from "@/hooks/use-current-user"
 import type { Asset, IncidentRecord, IncidentSeverity, IncidentStatus, IncidentType } from "@/lib/types"
+import { trpc } from "@/lib/trpc/react"
 
 const incidentStatusOptions: IncidentStatus[] = ["open", "investigating", "resolved"]
 const incidentSeverityOptions: IncidentSeverity[] = ["low", "medium", "high", "critical"]
@@ -71,7 +72,7 @@ function statusClass(value: IncidentStatus): string {
 
 export default function IncidentsPage() {
   const { t, formatDate, formatCurrency } = useAppRuntime()
-  const { isAdmin, loading: userLoading } = useCurrentUser()
+  const { user, isAdmin, loading: userLoading } = useCurrentUser()
   const searchParams = useSearchParams()
 
   const [incidents, setIncidents] = useState<IncidentRecord[]>([])
@@ -97,46 +98,54 @@ export default function IncidentsPage() {
   const [estimatedRepairCost, setEstimatedRepairCost] = useState("")
   const [pendingDeleteIncidentId, setPendingDeleteIncidentId] = useState<string | null>(null)
 
-  const loadIncidents = async () => {
-    const params = new URLSearchParams({
-      page: String(page),
-      pageSize: String(pageSize),
+  const incidentsQuery = trpc.incidents.listExtended.useQuery(
+    {
+      page,
+      pageSize,
       search,
       status: statusFilter,
       severity: severityFilter,
-    })
+      assetId: assetFilter !== "all" ? assetFilter : undefined,
+    },
+    {
+      enabled: !userLoading && isAdmin,
+      staleTime: 10_000,
+    },
+  )
 
-    if (assetFilter !== "all") {
-      params.set("assetId", assetFilter)
-    }
+  const assetsQuery = trpc.assets.list.useQuery(undefined, {
+    enabled: !userLoading && isAdmin,
+    staleTime: 30_000,
+  })
 
-    const response = await fetch(`/api/incidents?${params.toString()}`, { cache: "no-store" })
-    if (!response.ok) {
+  const createIncidentMutation = trpc.incidents.create.useMutation()
+  const deleteIncidentMutation = trpc.incidents.remove.useMutation()
+
+  useEffect(() => {
+    if (!incidentsQuery.data) {
       setIncidents([])
       setTotalIncidents(0)
       setGroupedCounts({ open: 0, investigating: 0, resolved: 0, critical: 0 })
       return
     }
 
-    const payload = (await response.json()) as {
+    const payload = incidentsQuery.data as {
       incidents: IncidentRecord[]
       counts?: { open: number; investigating: number; resolved: number; critical: number }
       pagination?: { total: number }
     }
+
     setIncidents(payload.incidents ?? [])
-    setTotalIncidents(payload.pagination?.total ?? payload.incidents.length)
+    setTotalIncidents(payload.pagination?.total ?? payload.incidents?.length ?? 0)
     setGroupedCounts(payload.counts ?? { open: 0, investigating: 0, resolved: 0, critical: 0 })
-  }
+  }, [incidentsQuery.data])
 
-  const loadAssets = async () => {
-    const response = await fetch("/api/assets?page=1&pageSize=200", { cache: "no-store" })
-    if (!response.ok) {
-      setAssets([])
-      return
-    }
+  useEffect(() => {
+    setPage(1)
+  }, [search, statusFilter, severityFilter, assetFilter])
 
-    const payload = (await response.json()) as { assets: Asset[] }
-    const loadedAssets = payload.assets ?? []
+  useEffect(() => {
+    const loadedAssets = (assetsQuery.data ?? []) as Asset[]
     setAssets(loadedAssets)
 
     const preselectedAsset = searchParams.get("assetId")
@@ -151,27 +160,7 @@ export default function IncidentsPage() {
     if (!selectedAssetId && loadedAssets.length > 0) {
       setSelectedAssetId(loadedAssets[0]!.id)
     }
-  }
-
-  useEffect(() => {
-    if (userLoading || !isAdmin) {
-      return
-    }
-
-    void loadIncidents()
-  }, [isAdmin, userLoading, page, pageSize, search, statusFilter, severityFilter, assetFilter])
-
-  useEffect(() => {
-    setPage(1)
-  }, [search, statusFilter, severityFilter, assetFilter])
-
-  useEffect(() => {
-    if (userLoading || !isAdmin) {
-      return
-    }
-
-    void loadAssets()
-  }, [isAdmin, userLoading])
+  }, [assetsQuery.data, searchParams, selectedAssetId])
 
   const createIncident = async () => {
     if (!selectedAssetId || title.trim().length < 3 || description.trim().length < 5) {
@@ -179,10 +168,8 @@ export default function IncidentsPage() {
     }
 
     setCreating(true)
-    const response = await fetch("/api/incidents", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const response = await createIncidentMutation
+      .mutateAsync({
         assetId: selectedAssetId,
         incidentType,
         title,
@@ -190,8 +177,12 @@ export default function IncidentsPage() {
         severity,
         occurredAt: occurredAt || null,
         estimatedRepairCost: estimatedRepairCost.trim().length > 0 ? Number(estimatedRepairCost) : null,
-      }),
-    })
+        reportedBy: user?.displayName || user?.email || "System",
+      })
+      .then(
+        () => ({ ok: true }),
+        () => ({ ok: false }),
+      )
     setCreating(false)
 
     if (!response.ok) {
@@ -205,17 +196,22 @@ export default function IncidentsPage() {
     setIncidentType("damage")
     setOccurredAt("")
     setEstimatedRepairCost("")
-    await loadIncidents()
+    await incidentsQuery.refetch()
   }
 
   const deleteIncident = async (id: string) => {
-    const response = await fetch(`/api/incidents/${id}`, { method: "DELETE" })
+    const response = await deleteIncidentMutation
+      .mutateAsync({ id })
+      .then(
+        () => ({ ok: true }),
+        () => ({ ok: false }),
+      )
     if (!response.ok) {
       return
     }
 
     setPendingDeleteIncidentId(null)
-    await loadIncidents()
+    await incidentsQuery.refetch()
   }
 
   const pendingDeleteIncident = pendingDeleteIncidentId
