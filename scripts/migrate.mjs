@@ -7,8 +7,7 @@ import { migrate as migratePg } from "drizzle-orm/node-postgres/migrator"
 import { Pool } from "pg"
 
 async function migrateDatabase() {
-  const dbClient =
-    process.env.DB_CLIENT ?? (process.env.DATABASE_URL?.startsWith("postgres") ? "pg" : "sqlite3")
+  const dbClient = process.env.DB_CLIENT ?? (process.env.DATABASE_URL?.startsWith("postgres") ? "pg" : "sqlite3")
 
   if (dbClient === "pg") {
     const databaseUrl = process.env.DATABASE_URL
