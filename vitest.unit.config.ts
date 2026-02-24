@@ -5,9 +5,17 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: true,
-    include: ["tests/**/*.test.{ts,tsx}"],
+    include: ["tests/unit/**/*.test.{ts,tsx}"],
     clearMocks: true,
     setupFiles: ["tests/setup.ts"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text"],
+      thresholds: {
+        statements: 89,
+        lines: 89,
+      },
+    },
   },
   resolve: {
     alias: {

@@ -5,6 +5,7 @@ node_modules/
 .env*.local
 .DS_Store
 
-# Keep these dev resources for now (intentionally not ignored):
 shelf.sqlite
-storage/
+storage
+coverage
+public

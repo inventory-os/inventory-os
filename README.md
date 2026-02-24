@@ -27,6 +27,33 @@ Self-hostable, open-source asset management app with QR labels, borrowing, locat
 - Run all tests: `npm test`
 - Watch mode: `npm run test:watch`
 - Coverage: `npm run test:coverage`
+- Run only unit tests: `npm run test:unit`
+- Unit watch mode: `npm run test:unit:watch`
+- Unit coverage (enforced 89% statements/lines): `npm run test:unit:coverage`
+
+### Unit test structure
+
+- `tests/unit/lib/`
+   - `api-error.test.ts` → `lib/api-error.ts`
+   - `auth-session.test.ts` → `lib/auth-session.ts`
+   - `db-runtime.test.ts` → `lib/db.ts`
+   - `i18n.test.ts` → `lib/i18n.ts`
+   - `intl.test.ts` → `lib/intl.ts`
+   - `oidc.test.ts` → `lib/oidc.ts`
+   - `qr-payload.test.ts` → `lib/qr-payload.ts`
+   - `request-security.test.ts` → `lib/request-security.ts`
+   - `security-utils.test.ts` → `lib/security-utils.ts`
+- `tests/unit/components/`
+   - `app-runtime-provider.test.tsx` → `components/app-runtime-provider.tsx`
+   - `data-table-pagination.test.tsx` → `components/ui/data-table-pagination.tsx`
+   - `status-badge.test.tsx` → `components/status-badge.tsx`
+- `tests/unit/hooks/`
+   - `use-current-user.test.tsx` → `hooks/use-current-user.ts`
+   - `use-mobile.test.tsx` → `hooks/use-mobile.ts`
+- `tests/unit/api/`
+   - `incidents-route.test.ts` → `app/api/incidents/route.ts` (validation, pagination/filtering, activity recording)
+   - `incidents-id-route.test.ts` → `app/api/incidents/[id]/route.ts` (404/400/200 branches, delete file cleanup)
+   - `search-route.test.ts` → `app/api/search/route.ts` (query normalization, truncation, related-match classification)
 
 Current test suite includes:
 

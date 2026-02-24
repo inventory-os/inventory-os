@@ -1061,14 +1061,16 @@ async function ensureCategorySchema() {
 
   for (const defaultCategory of ASSET_CATEGORIES) {
     await runQuery(sql`
-      INSERT OR IGNORE INTO categories (id, name)
+      INSERT INTO categories (id, name)
       VALUES (${makeId("CAT")}, ${defaultCategory})
+      ON CONFLICT(name) DO NOTHING
     `)
   }
 
   await runQuery(sql`
-    INSERT OR IGNORE INTO categories (id, name)
+    INSERT INTO categories (id, name)
     VALUES (${makeId("CAT")}, ${"Uncategorized"})
+    ON CONFLICT(name) DO NOTHING
   `)
 
   const existingAssetCategories = await queryRows<{ category: string }>(sql`
@@ -1079,8 +1081,9 @@ async function ensureCategorySchema() {
 
   for (const row of existingAssetCategories) {
     await runQuery(sql`
-      INSERT OR IGNORE INTO categories (id, name)
+      INSERT INTO categories (id, name)
       VALUES (${makeId("CAT")}, ${row.category})
+      ON CONFLICT(name) DO NOTHING
     `)
   }
 }
@@ -1137,6 +1140,19 @@ export async function ensureCoreSchema(): Promise<void> {
 
     await ensureLocationHierarchyColumns()
     await ensureLocationAddressColumns()
+
+    await runQuery(sql`
+      CREATE TABLE IF NOT EXISTS producers (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        website_url TEXT NOT NULL UNIQUE,
+        domain TEXT NOT NULL,
+        description TEXT,
+        logo_url TEXT,
+        source_url TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
 
     await runQuery(sql`
       CREATE TABLE IF NOT EXISTS assets (
@@ -1833,8 +1849,9 @@ async function createNotification(input: {
 
   if (eventKey) {
     await runQuery(sql`
-      INSERT OR IGNORE INTO notifications (id, recipient_member_id, type, title, message, level, delivery, link_url, event_key)
+      INSERT INTO notifications (id, recipient_member_id, type, title, message, level, delivery, link_url, event_key)
       VALUES (${makeId("NTF")}, ${input.recipientMemberId}, ${input.type}, ${input.title}, ${input.message}, ${level}, ${delivery}, ${input.linkUrl ?? null}, ${eventKey})
+      ON CONFLICT(event_key) DO NOTHING
     `)
     return
   }
