@@ -18,8 +18,8 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useAppRuntime } from "@/components/app-runtime-provider"
 import { NotificationBell } from "@/components/notification-bell"
-import { EUROPEAN_LOCALES, LOCALE_LABELS } from "@/lib/i18n"
-import type { EuropeanLocale } from "@/lib/data"
+import { EUROPEAN_LOCALES, LOCALE_LABELS } from "@/lib/utils/i18n"
+import type { EuropeanLocale } from "@/lib/types"
 
 interface PageHeaderProps {
   title: string
@@ -53,26 +53,24 @@ export function PageHeader({ title, breadcrumbs }: PageHeaderProps) {
       <div className="hidden min-w-0 flex-col md:flex">
         <span className="truncate text-sm font-semibold tracking-tight">{title}</span>
         <Breadcrumb>
-        <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbLink href="/">{t("appName")}</BreadcrumbLink>
-          </BreadcrumbItem>
-          {breadcrumbs?.map((crumb, i) => (
-            <span key={i} className="flex items-center gap-1.5">
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                {crumb.href ? (
-                  <BreadcrumbLink href={crumb.href}>
-                    {crumb.label}
-                  </BreadcrumbLink>
-                ) : (
-                  <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
-                )}
-              </BreadcrumbItem>
-            </span>
-          ))}
-        </BreadcrumbList>
-      </Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink href="/">{t("appName")}</BreadcrumbLink>
+            </BreadcrumbItem>
+            {breadcrumbs?.map((crumb, i) => (
+              <span key={i} className="flex items-center gap-1.5">
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  {crumb.href ? (
+                    <BreadcrumbLink href={crumb.href}>{crumb.label}</BreadcrumbLink>
+                  ) : (
+                    <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
+                  )}
+                </BreadcrumbItem>
+              </span>
+            ))}
+          </BreadcrumbList>
+        </Breadcrumb>
       </div>
 
       <div className="ml-auto flex items-center gap-2">

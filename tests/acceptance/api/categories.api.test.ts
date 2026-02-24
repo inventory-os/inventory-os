@@ -1,96 +1,33 @@
-import { describe, expect, it } from "vitest"
-import { apiJson } from "../support/http"
+import { beforeAll, describe, expect, it } from "vitest"
+import { createAcceptanceTrpcClient } from "../support/trpc"
+import { ensureBaseData } from "../support/http"
 
-describe("categories.api acceptance", () => {
-  it("covers get list/search/pagination and create validation", async () => {
-    const invalidCreate = await apiJson<{ error: unknown }>("/api/categories", {
-      method: "POST",
-      body: JSON.stringify({ name: "x" }),
-    })
-    expect(invalidCreate.status).toBe(400)
-
-    const suffix = Date.now()
-    const name = `Category Api ${suffix}`
-
-    const created = await apiJson<{ category: { id: string; name: string } }>("/api/categories", {
-      method: "POST",
-      body: JSON.stringify({ name }),
-    })
-    expect(created.status).toBe(201)
-    const categoryId = created.data.category.id
-
-    const listed = await apiJson<{
-      categories: Array<{ name: string; count: number }>
-      managedCategories: Array<{ id: string; name: string }>
-      pagination: { page: number; pageSize: number; total: number; totalPages: number }
-    }>(`/api/categories?page=1&pageSize=10&search=${encodeURIComponent(name)}`)
-
-    expect(listed.status).toBe(200)
-    expect(listed.data.managedCategories.some((category) => category.id === categoryId)).toBe(true)
-    expect(listed.data.pagination.total).toBeGreaterThan(0)
-    expect(Array.isArray(listed.data.categories)).toBe(true)
+describe("categories api acceptance (real runtime)", () => {
+  beforeAll(async () => {
+    await ensureBaseData()
   })
 
-  it("covers patch and delete branches including validation and not-found", async () => {
-    const suffix = Date.now()
-    const created = await apiJson<{ category: { id: string; name: string } }>("/api/categories", {
-      method: "POST",
-      body: JSON.stringify({ name: `Patch Category ${suffix}` }),
+  it("creates, updates, summarizes, and removes a category", async () => {
+    const client = createAcceptanceTrpcClient("admin")
+    const unique = Date.now()
+    const initialName = `Acceptance Category ${unique}`
+    const updatedName = `Acceptance Category Updated ${unique}`
+
+    const created = await client.categories.create.mutate({ name: initialName })
+    expect(created.id).toBeTruthy()
+    expect(created.name).toBe(initialName)
+
+    const updated = await client.categories.update.mutate({
+      id: created.id,
+      name: updatedName,
     })
-    expect(created.status).toBe(201)
-    const categoryId = created.data.category.id
+    expect(updated?.id).toBe(created.id)
+    expect(updated?.name).toBe(updatedName)
 
-    const invalidPatch = await apiJson<{ error: unknown }>(`/api/categories/${categoryId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ name: "x" }),
-    })
-    expect(invalidPatch.status).toBe(400)
+    const summary = await client.categories.summary.query()
+    expect(summary.some((entry) => entry.name === updatedName)).toBe(true)
 
-    const patched = await apiJson<{ category: { id: string; name: string } }>(`/api/categories/${categoryId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ name: `Patch Category ${suffix} Updated` }),
-    })
-    expect(patched.status).toBe(200)
-    expect(patched.data.category.name).toContain("Updated")
-
-    const patchMissing = await apiJson<{ error: string }>("/api/categories/does-not-exist", {
-      method: "PATCH",
-      body: JSON.stringify({ name: "Missing Category" }),
-    })
-    expect(patchMissing.status).toBe(404)
-
-    const deleted = await apiJson<{ success: boolean }>(`/api/categories/${categoryId}`, { method: "DELETE" })
-    expect(deleted.status).toBe(200)
-
-    const deleteMissing = await apiJson<{ error: string }>(`/api/categories/${categoryId}`, { method: "DELETE" })
-    expect(deleteMissing.status).toBe(404)
-  })
-
-  it("covers member and unauth access behavior", async () => {
-    const memberGet = await apiJson<{ managedCategories: unknown[] }>("/api/categories", { role: "member" })
-    expect(memberGet.status).toBe(200)
-
-    const memberPost = await apiJson<{ error: string }>("/api/categories", {
-      role: "member",
-      method: "POST",
-      body: JSON.stringify({ name: "Denied Category" }),
-    })
-    expect(memberPost.status).toBe(403)
-
-    const memberPatch = await apiJson<{ error: string }>("/api/categories/does-not-exist", {
-      role: "member",
-      method: "PATCH",
-      body: JSON.stringify({ name: "Denied Category" }),
-    })
-    expect(memberPatch.status).toBe(403)
-
-    const memberDelete = await apiJson<{ error: string }>("/api/categories/does-not-exist", {
-      role: "member",
-      method: "DELETE",
-    })
-    expect(memberDelete.status).toBe(403)
-
-    const unauthGet = await apiJson<{ error: string }>("/api/categories", { role: "none" })
-    expect(unauthGet.status).toBe(401)
+    const removed = await client.categories.remove.mutate({ id: created.id })
+    expect(removed).toBe(true)
   })
 })

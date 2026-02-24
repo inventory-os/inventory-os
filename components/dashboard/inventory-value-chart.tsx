@@ -1,15 +1,7 @@
 "use client"
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts"
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
 import { useAppRuntime } from "@/components/app-runtime-provider"
 
 type InventoryValuePoint = {
@@ -30,7 +22,9 @@ export function InventoryValueChart({ data, currency }: { data: InventoryValuePo
     <Card className="app-surface">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium">{t("dashboardInventoryValueByCategory")}</CardTitle>
-        <CardDescription className="text-xs">{t("dashboardTotalValue", { value: formatter.format(total) })}</CardDescription>
+        <CardDescription className="text-xs">
+          {t("dashboardTotalValue", { value: formatter.format(total) })}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="h-[240px]">

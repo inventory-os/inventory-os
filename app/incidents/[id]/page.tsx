@@ -14,7 +14,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import type { IncidentFile, IncidentRecord, IncidentSeverity, IncidentStatus, IncidentType } from "@/lib/data"
+import type { IncidentFile, IncidentRecord, IncidentSeverity, IncidentStatus, IncidentType } from "@/lib/types"
+import { trpc } from "@/lib/trpc/react"
 
 function incidentStatusLabel(t: (key: string) => string, status: IncidentStatus): string {
   if (status === "open") return t("incidentsStatusOpen")
@@ -62,20 +63,22 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
   const [loading, setLoading] = useState(true)
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false)
 
+  const incidentQuery = trpc.incidents.byId.useQuery(
+    { id },
+    {
+      enabled: !userLoading && isAdmin,
+      staleTime: 10_000,
+    },
+  )
+
+  const removeIncidentMutation = trpc.incidents.remove.useMutation()
+
   const loadIncident = async () => {
     setLoading(true)
 
-    const [incidentResponse, filesResponse] = await Promise.all([
-      fetch(`/api/incidents/${id}`, { cache: "no-store" }),
-      fetch(`/api/incidents/${id}/files`, { cache: "no-store" }),
-    ])
+    const filesResponse = await fetch(`/api/incidents/${id}/files`, { cache: "no-store" })
 
-    if (incidentResponse.ok) {
-      const payload = (await incidentResponse.json()) as { incident: IncidentRecord }
-      setIncident(payload.incident)
-    } else {
-      setIncident(null)
-    }
+    setIncident((incidentQuery.data as IncidentRecord | null | undefined) ?? null)
 
     if (filesResponse.ok) {
       const payload = (await filesResponse.json()) as { files: IncidentFile[] }
@@ -93,7 +96,7 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
     }
 
     void loadIncident()
-  }, [id, isAdmin, userLoading])
+  }, [id, isAdmin, userLoading, incidentQuery.data])
 
   const uploadIncidentFile = async (file: File | null, kind: "image" | "document") => {
     if (!incident || !file) {
@@ -134,7 +137,10 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
       return
     }
 
-    const response = await fetch(`/api/incidents/${incident.id}`, { method: "DELETE" })
+    const response = await removeIncidentMutation.mutateAsync({ id: incident.id }).then(
+      () => ({ ok: true }),
+      () => ({ ok: false }),
+    )
     if (!response.ok) {
       return
     }
@@ -143,7 +149,11 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
   }
 
   if (userLoading || loading) {
-    return <AppShell><PageHeader title={t("navIncidents")} breadcrumbs={[{ label: t("navIncidents") }]} /></AppShell>
+    return (
+      <AppShell>
+        <PageHeader title={t("navIncidents")} breadcrumbs={[{ label: t("navIncidents") }]} />
+      </AppShell>
+    )
   }
 
   if (!isAdmin) {
@@ -174,7 +184,10 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
 
   return (
     <AppShell>
-      <PageHeader title={incident.title} breadcrumbs={[{ label: t("navIncidents"), href: "/incidents" }, { label: incident.id }]} />
+      <PageHeader
+        title={incident.title}
+        breadcrumbs={[{ label: t("navIncidents"), href: "/incidents" }, { label: incident.id }]}
+      />
       <div className="app-page">
         <div className="flex items-center justify-between">
           <Button variant="ghost" size="sm" asChild className="-ml-2">
@@ -184,14 +197,21 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
             </Link>
           </Button>
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="font-mono">{incident.id}</Badge>
+            <Badge variant="outline" className="font-mono">
+              {incident.id}
+            </Badge>
             <Button size="sm" variant="outline" asChild>
               <Link href={`/incidents/${incident.id}/edit`}>
                 <Pencil className="mr-1.5 size-3.5" />
                 {t("commonEdit")}
               </Link>
             </Button>
-            <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => setOpenDeleteDialog(true)}>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-destructive hover:text-destructive"
+              onClick={() => setOpenDeleteDialog(true)}
+            >
               <Trash2 className="mr-1.5 size-3.5" />
               {t("assetDelete")}
             </Button>
@@ -207,15 +227,21 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline" className={statusClass(incident.status)}>{incidentStatusLabel(t, incident.status)}</Badge>
-                  <Badge variant="outline" className={severityClass(incident.severity)}>{incidentSeverityLabel(t, incident.severity)}</Badge>
+                  <Badge variant="outline" className={statusClass(incident.status)}>
+                    {incidentStatusLabel(t, incident.status)}
+                  </Badge>
+                  <Badge variant="outline" className={severityClass(incident.severity)}>
+                    {incidentSeverityLabel(t, incident.severity)}
+                  </Badge>
                   <Badge variant="secondary">{incidentTypeLabel(t, incident.incidentType)}</Badge>
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="grid gap-1.5">
                     <p className="text-xs text-muted-foreground">{t("incidentsAsset")}</p>
-                    <Link href={`/assets/${incident.assetId}`} className="text-sm font-medium hover:text-primary">{incident.assetName}</Link>
+                    <Link href={`/assets/${incident.assetId}`} className="text-sm font-medium hover:text-primary">
+                      {incident.assetName}
+                    </Link>
                   </div>
                   <div className="grid gap-1.5">
                     <p className="text-xs text-muted-foreground">{t("incidentsReportedBy")}</p>
@@ -223,11 +249,17 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
                   </div>
                   <div className="grid gap-1.5">
                     <p className="text-xs text-muted-foreground">{t("incidentsReportedAt")}</p>
-                    <p className="text-sm">{formatDate(incident.reportedAt, { month: "short", day: "numeric", year: "numeric" })}</p>
+                    <p className="text-sm">
+                      {formatDate(incident.reportedAt, { month: "short", day: "numeric", year: "numeric" })}
+                    </p>
                   </div>
                   <div className="grid gap-1.5">
                     <p className="text-xs text-muted-foreground">{t("incidentsOccurredAt")}</p>
-                    <p className="text-sm">{incident.occurredAt ? formatDate(incident.occurredAt, { month: "short", day: "numeric", year: "numeric" }) : "—"}</p>
+                    <p className="text-sm">
+                      {incident.occurredAt
+                        ? formatDate(incident.occurredAt, { month: "short", day: "numeric", year: "numeric" })
+                        : "—"}
+                    </p>
                   </div>
                 </div>
 
@@ -238,7 +270,9 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
 
                 <div className="grid gap-1.5">
                   <p className="text-xs text-muted-foreground">{t("incidentsResolutionNotes")}</p>
-                  <p className="text-sm whitespace-pre-wrap">{incident.resolutionNotes?.trim().length ? incident.resolutionNotes : "—"}</p>
+                  <p className="text-sm whitespace-pre-wrap">
+                    {incident.resolutionNotes?.trim().length ? incident.resolutionNotes : "—"}
+                  </p>
                 </div>
               </CardContent>
             </Card>
@@ -251,7 +285,9 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
               <CardContent className="space-y-3">
                 <div className="grid gap-2 sm:grid-cols-2">
                   <div className="rounded-md border border-dashed bg-background p-2">
-                    <Label htmlFor="incident-image-upload" className="text-[11px]">{t("incidentsUploadImage")}</Label>
+                    <Label htmlFor="incident-image-upload" className="text-[11px]">
+                      {t("incidentsUploadImage")}
+                    </Label>
                     <Input
                       id="incident-image-upload"
                       type="file"
@@ -264,7 +300,9 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
                     />
                   </div>
                   <div className="rounded-md border border-dashed bg-background p-2">
-                    <Label htmlFor="incident-document-upload" className="text-[11px]">{t("incidentsUploadDocument")}</Label>
+                    <Label htmlFor="incident-document-upload" className="text-[11px]">
+                      {t("incidentsUploadDocument")}
+                    </Label>
                     <Input
                       id="incident-document-upload"
                       type="file"
@@ -287,9 +325,17 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
                       return (
                         <div key={file.id} className="flex items-center justify-between rounded-md border px-2.5 py-2">
                           <div className="flex min-w-0 items-center gap-2">
-                            {isImage ? <ImageIcon className="size-3.5 shrink-0 text-muted-foreground" /> : <FileText className="size-3.5 shrink-0 text-muted-foreground" />}
+                            {isImage ? (
+                              <ImageIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                            ) : (
+                              <FileText className="size-3.5 shrink-0 text-muted-foreground" />
+                            )}
                             <a
-                              href={isImage ? `/api/incidents/${incident.id}/files/${file.id}` : `/api/incidents/${incident.id}/files/${file.id}?download=1`}
+                              href={
+                                isImage
+                                  ? `/api/incidents/${incident.id}/files/${file.id}`
+                                  : `/api/incidents/${incident.id}/files/${file.id}?download=1`
+                              }
                               target={isImage ? "_blank" : undefined}
                               rel={isImage ? "noreferrer" : undefined}
                               className="truncate text-xs font-medium hover:text-primary"
@@ -299,9 +345,16 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
                           </div>
                           <div className="flex items-center gap-1">
                             <Button size="sm" variant="ghost" className="h-7 px-2" asChild>
-                              <a href={`/api/incidents/${incident.id}/files/${file.id}?download=1`}>{t("commonDownload")}</a>
+                              <a href={`/api/incidents/${incident.id}/files/${file.id}?download=1`}>
+                                {t("commonDownload")}
+                              </a>
                             </Button>
-                            <Button size="sm" variant="ghost" className="h-7 px-2 text-destructive" onClick={() => void deleteIncidentFile(file.id)}>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-destructive"
+                              onClick={() => void deleteIncidentFile(file.id)}
+                            >
                               {t("commonRemove")}
                             </Button>
                           </div>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { LOCALE_LABELS, EUROPEAN_LOCALES, translate } from "@/lib/i18n"
+import { LOCALE_LABELS, EUROPEAN_LOCALES, translate } from "@/lib/utils/i18n"
 
 describe("i18n", () => {
   it("contains labels for all supported locales", () => {

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
-import { createIncidentFileRecord, listIncidentFiles, listIncidents } from "@/lib/core-repository"
-import type { IncidentFileKind } from "@/lib/data"
-import { storeIncidentFile } from "@/lib/asset-storage"
+import { createIncidentFileRecord, listIncidentFiles, listIncidents } from "@/lib/services"
+import type { IncidentFileKind } from "@/lib/types"
+import { storeIncidentFile } from "@/lib/services/asset-storage.service"
 
 const uploadKindSchema = z.custom<IncidentFileKind>((value) => {
   return value === undefined || value === "image" || value === "document"

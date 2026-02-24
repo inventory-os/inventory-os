@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { AppShell } from "@/components/app-shell"
 import { PageHeader } from "@/components/page-header"
 import { Card, CardContent } from "@/components/ui/card"
@@ -19,9 +19,10 @@ import {
 } from "@/components/ui/dialog"
 import { SearchableSelect } from "@/components/ui/searchable-select"
 import { Plus, CalendarDays, Clock, CheckCircle2, Search } from "lucide-react"
-import { type Asset, type LoanRecord, type TeamMember } from "@/lib/data"
+import { type Asset, type LoanRecord, type TeamMember } from "@/lib/types"
 import { useCurrentUser } from "@/hooks/use-current-user"
 import { useAppRuntime } from "@/components/app-runtime-provider"
+import { trpc } from "@/lib/trpc/react"
 
 type BookingStatus = "active" | "upcoming" | "completed"
 
@@ -43,7 +44,6 @@ const statusConfig: Record<BookingStatus, { labelKey: string; className: string 
 export default function BookingsPage() {
   const { isAdmin } = useCurrentUser()
   const { t, formatDate } = useAppRuntime()
-  const [bookings, setBookings] = useState<LoanRecord[]>([])
   const [search, setSearch] = useState("")
   const [showCompleted, setShowCompleted] = useState(false)
   const [openCreate, setOpenCreate] = useState(false)
@@ -54,53 +54,44 @@ export default function BookingsPage() {
   const [bookingDueDate, setBookingDueDate] = useState<string>("")
   const [creatingBooking, setCreatingBooking] = useState(false)
 
-  useEffect(() => {
-    const loadBookings = async () => {
-      const response = await fetch("/api/loans", { cache: "no-store" })
-      if (!response.ok) {
-        return
-      }
-      const payload = await response.json()
-      setBookings(payload.loans)
-    }
+  const loansQuery = trpc.loans.list.useQuery(undefined, {
+    staleTime: 30_000,
+  })
 
-    loadBookings()
-  }, [])
+  const assetsQuery = trpc.assets.list.useQuery(undefined, {
+    enabled: openCreate,
+    staleTime: 30_000,
+  })
+
+  const membersQuery = trpc.members.list.useQuery(undefined, {
+    enabled: openCreate,
+    staleTime: 30_000,
+  })
+
+  const borrowAssetMutation = trpc.assets.borrow.useMutation()
 
   const loadBookings = async () => {
-    const response = await fetch("/api/loans", { cache: "no-store" })
-    if (!response.ok) {
-      return
-    }
-    const payload = await response.json()
-    setBookings(payload.loans)
+    await loansQuery.refetch()
   }
 
   const openCreateDialog = async () => {
-    const [assetsResponse, membersResponse] = await Promise.all([
-      fetch("/api/assets?page=1&pageSize=100", { cache: "no-store" }),
-      fetch("/api/members?page=1&pageSize=100", { cache: "no-store" }),
-    ])
-
-    if (assetsResponse.ok) {
-      const payload = await assetsResponse.json()
-      const loadedAssets = (payload.assets ?? []) as Asset[]
-      setAssets(loadedAssets)
-      if (!bookingAssetId && loadedAssets.length > 0) {
-        setBookingAssetId(loadedAssets[0]!.id)
-      }
-    }
-
-    if (membersResponse.ok) {
-      const payload = await membersResponse.json()
-      const loadedMembers = (payload.members ?? []) as TeamMember[]
-      setMembers(loadedMembers)
-      if (!bookingMemberId && loadedMembers.length > 0) {
-        setBookingMemberId(loadedMembers[0]!.id)
-      }
-    }
-
     setOpenCreate(true)
+
+    const [assetResult, memberResult] = await Promise.all([assetsQuery.refetch(), membersQuery.refetch()])
+
+    const loadedAssets = (assetResult.data ?? []) as Asset[]
+    const loadedMembers = (memberResult.data ?? []) as TeamMember[]
+
+    setAssets(loadedAssets)
+    setMembers(loadedMembers)
+
+    if (!bookingAssetId && loadedAssets.length > 0) {
+      setBookingAssetId(loadedAssets[0]!.id)
+    }
+
+    if (!bookingMemberId && loadedMembers.length > 0) {
+      setBookingMemberId(loadedMembers[0]!.id)
+    }
   }
 
   const handleCreateBooking = async () => {
@@ -109,15 +100,16 @@ export default function BookingsPage() {
     }
 
     setCreatingBooking(true)
-    const response = await fetch(`/api/assets/${bookingAssetId}/borrow`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "borrow",
+    const response = await borrowAssetMutation
+      .mutateAsync({
+        assetId: bookingAssetId,
         memberId: bookingMemberId,
         dueAt: bookingDueDate || undefined,
-      }),
-    })
+      })
+      .then(
+        () => ({ ok: true }),
+        () => ({ ok: false }),
+      )
     setCreatingBooking(false)
 
     if (!response.ok) {
@@ -130,13 +122,14 @@ export default function BookingsPage() {
   }
 
   const withStatus = useMemo(() => {
+    const bookings = (loansQuery.data ?? []) as LoanRecord[]
     const now = Date.now()
     return bookings.map((booking) => {
       const dueAt = booking.dueAt ? new Date(booking.dueAt).getTime() : null
       const status: BookingStatus = booking.returnedAt ? "completed" : dueAt && dueAt > now ? "upcoming" : "active"
       return { ...booking, status }
     })
-  }, [bookings])
+  }, [loansQuery.data])
 
   const filteredBookings = useMemo(() => {
     const terms = search
@@ -251,7 +244,9 @@ export default function BookingsPage() {
                 <CardContent className="flex items-center justify-between p-4">
                   <div className="flex items-center gap-4">
                     <Avatar className="size-9">
-                      <AvatarFallback className="bg-secondary text-secondary-foreground text-xs">{getInitials(booking.memberName)}</AvatarFallback>
+                      <AvatarFallback className="bg-secondary text-secondary-foreground text-xs">
+                        {getInitials(booking.memberName)}
+                      </AvatarFallback>
                     </Avatar>
                     <div className="flex flex-col gap-0.5">
                       <span className="text-sm font-medium">{booking.assetName}</span>
@@ -308,7 +303,12 @@ export default function BookingsPage() {
               />
               {selectedBookingAsset ? (
                 <div className="text-xs text-muted-foreground">
-                  <a href={`/assets/${selectedBookingAsset.id}`} target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-primary">
+                  <a
+                    href={`/assets/${selectedBookingAsset.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline underline-offset-2 hover:text-primary"
+                  >
                     {t("assetViewDetails")}: {selectedBookingAsset.name}
                   </a>
                 </div>
@@ -338,7 +338,9 @@ export default function BookingsPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpenCreate(false)}>{t("commonCancel")}</Button>
+            <Button variant="outline" onClick={() => setOpenCreate(false)}>
+              {t("commonCancel")}
+            </Button>
             <Button onClick={handleCreateBooking} disabled={creatingBooking || !bookingAssetId || !bookingMemberId}>
               {creatingBooking ? t("settingsSaving") : t("bookingsCreateAction")}
             </Button>

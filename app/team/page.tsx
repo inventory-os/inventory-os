@@ -7,20 +7,8 @@ import { PageHeader } from "@/components/page-header"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import {
   Dialog,
   DialogContent,
@@ -34,8 +22,9 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DataTablePagination } from "@/components/ui/data-table-pagination"
 import { ArrowDownAZ, ArrowUpAZ, ArrowUpDown, MoreHorizontal, Plus, Search } from "lucide-react"
-import { type TeamMember, type TeamRole } from "@/lib/data"
+import { type TeamMember, type TeamRole } from "@/lib/types"
 import { useAppRuntime } from "@/components/app-runtime-provider"
+import { trpc } from "@/lib/trpc/react"
 
 const roleConfig = {
   admin: { className: "bg-primary/10 text-primary border-primary/20" },
@@ -80,7 +69,6 @@ function SortableHead({
 
 export default function TeamPage() {
   const { t } = useAppRuntime()
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [search, setSearch] = useState("")
   const [roleFilter, setRoleFilter] = useState<TeamRole | "all">("all")
   const [sortBy, setSortBy] = useState<TeamSortKey>("name")
@@ -89,37 +77,47 @@ export default function TeamPage() {
   const [saving, setSaving] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize] = useState(10)
-  const [totalMembers, setTotalMembers] = useState(0)
   const [form, setForm] = useState({
     name: "",
     email: "",
     role: "member" as TeamRole,
   })
 
-  const loadMembers = async () => {
-    const params = new URLSearchParams({
-      page: String(page),
-      pageSize: String(pageSize),
-      search,
-      role: roleFilter,
-    })
+  const membersQuery = trpc.members.list.useQuery(undefined, {
+    staleTime: 30_000,
+  })
 
-    const response = await fetch(`/api/members?${params.toString()}`, { cache: "no-store" })
-    if (!response.ok) {
-      return
-    }
-    const payload = await response.json()
-    setTeamMembers(payload.members)
-    setTotalMembers(payload.pagination?.total ?? payload.members.length)
-  }
-
-  useEffect(() => {
-    void loadMembers()
-  }, [page, pageSize, search, roleFilter])
+  const createMemberMutation = trpc.members.create.useMutation({
+    onSuccess: async () => {
+      await membersQuery.refetch()
+    },
+  })
 
   useEffect(() => {
     setPage(1)
   }, [search, roleFilter])
+
+  const filteredMembers = useMemo(() => {
+    const terms = search
+      .toLowerCase()
+      .split(/\s+/)
+      .map((term) => term.trim())
+      .filter(Boolean)
+
+    return (membersQuery.data ?? []).filter((member) => {
+      const roleMatches = roleFilter === "all" || member.role === roleFilter
+      if (!roleMatches) {
+        return false
+      }
+
+      if (terms.length === 0) {
+        return true
+      }
+
+      const searchable = `${member.name} ${member.email} ${member.id}`.toLowerCase()
+      return terms.every((term) => searchable.includes(term))
+    })
+  }, [membersQuery.data, roleFilter, search])
 
   const sortedMembers = useMemo(() => {
     const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" })
@@ -140,7 +138,7 @@ export default function TeamPage() {
       }
     }
 
-    return [...teamMembers].sort((left, right) => {
+    return [...filteredMembers].sort((left, right) => {
       const leftValue = getSortValue(left)
       const rightValue = getSortValue(right)
 
@@ -150,7 +148,14 @@ export default function TeamPage() {
 
       return collator.compare(String(leftValue), String(rightValue)) * direction
     })
-  }, [teamMembers, sortBy, sortDirection])
+  }, [filteredMembers, sortBy, sortDirection])
+
+  const paginatedMembers = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return sortedMembers.slice(start, start + pageSize)
+  }, [page, pageSize, sortedMembers])
+
+  const totalMembers = filteredMembers.length
 
   const handleSortChange = (key: TeamSortKey) => {
     if (sortBy === key) {
@@ -163,18 +168,16 @@ export default function TeamPage() {
 
   const createMember = async () => {
     setSaving(true)
-    const response = await fetch("/api/members", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    })
+    const response = await createMemberMutation.mutateAsync(form).then(
+      () => ({ ok: true }),
+      () => ({ ok: false }),
+    )
     setSaving(false)
     if (!response.ok) {
       return
     }
     setOpen(false)
     setForm({ name: "", email: "", role: "member" })
-    await loadMembers()
   }
 
   return (
@@ -183,12 +186,8 @@ export default function TeamPage() {
       <div className="app-page">
         <div className="app-hero flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {t("teamMembersTitle")}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {t("teamMembersSubtitle")}
-            </p>
+            <h1 className="text-2xl font-semibold tracking-tight">{t("teamMembersTitle")}</h1>
+            <p className="text-sm text-muted-foreground">{t("teamMembersSubtitle")}</p>
           </div>
           <Button size="sm" onClick={() => setOpen(true)}>
             <Plus className="mr-1.5 size-3.5" />
@@ -255,7 +254,7 @@ export default function TeamPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sortedMembers.map((member) => {
+              {paginatedMembers.map((member) => {
                 const role = roleConfig[member.role]
                 const roleLabelKey = member.role === "admin" ? "teamRoleAdmin" : "teamRoleMember"
                 return (
@@ -304,9 +303,7 @@ export default function TeamPage() {
           </Table>
 
           <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>
-              {t("teamShowing", { current: sortedMembers.length, total: totalMembers })}
-            </span>
+            <span>{t("teamShowing", { current: paginatedMembers.length, total: totalMembers })}</span>
             <DataTablePagination page={page} pageSize={pageSize} total={totalMembers} onPageChange={setPage} />
           </div>
         </div>
@@ -321,15 +318,25 @@ export default function TeamPage() {
           <div className="grid gap-3">
             <div className="grid gap-2">
               <Label>{t("commonName")}</Label>
-              <Input value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} />
+              <Input
+                value={form.name}
+                onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+              />
             </div>
             <div className="grid gap-2">
               <Label>{t("commonEmail")}</Label>
-              <Input value={form.email} type="email" onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))} />
+              <Input
+                value={form.email}
+                type="email"
+                onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
+              />
             </div>
             <div className="grid gap-2">
               <Label>{t("teamRole")}</Label>
-              <Select value={form.role} onValueChange={(value) => setForm((prev) => ({ ...prev, role: value as TeamRole }))}>
+              <Select
+                value={form.role}
+                onValueChange={(value) => setForm((prev) => ({ ...prev, role: value as TeamRole }))}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>

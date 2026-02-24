@@ -1,11 +1,8 @@
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import type { AssetStatus } from "@/lib/data"
+import type { AssetStatus } from "@/lib/types"
 
-const statusConfig: Record<
-  AssetStatus,
-  { label: string; className: string }
-> = {
+const statusConfig: Record<AssetStatus, { label: string; className: string }> = {
   available: {
     label: "Available",
     className: "bg-success/10 text-success border-success/20",

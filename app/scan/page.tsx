@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useAppRuntime } from "@/components/app-runtime-provider"
+import { trpc } from "@/lib/trpc/react"
 
 type QrResolvePayload = {
   found: boolean
@@ -78,6 +79,7 @@ export default function ScanPage() {
   const [lastScanValue, setLastScanValue] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [resolving, setResolving] = useState(false)
+  const trpcUtils = trpc.useUtils()
 
   const stopScanner = () => {
     if (intervalRef.current) {
@@ -112,13 +114,12 @@ export default function ScanPage() {
 
     setResolving(true)
     try {
-      const response = await fetch(`/api/qr/${encodeURIComponent(id)}`, { cache: "no-store" })
-      if (!response.ok) {
+      const payload = await trpcUtils.qr.resolve.fetch({ id })
+      if (!payload || payload.found === false) {
         setError(t("scanNotFound"))
         return
       }
 
-      const payload = (await response.json()) as QrResolvePayload
       if (payload.authenticated && payload.redirectTo) {
         router.push(payload.redirectTo)
         return
@@ -147,9 +148,11 @@ export default function ScanPage() {
         return
       }
 
-      const BarcodeDetectorClass = (window as unknown as {
-        BarcodeDetector?: new (options?: { formats?: string[] }) => BarcodeDetectorLike
-      }).BarcodeDetector
+      const BarcodeDetectorClass = (
+        window as unknown as {
+          BarcodeDetector?: new (options?: { formats?: string[] }) => BarcodeDetectorLike
+        }
+      ).BarcodeDetector
 
       const hasNativeDetector = Boolean(BarcodeDetectorClass)
       setSupported(hasNativeDetector)
@@ -157,9 +160,8 @@ export default function ScanPage() {
       stopScanner()
       await new Promise((resolve) => window.setTimeout(resolve, 120))
 
-      const constraints: MediaTrackConstraints = cameraId !== "auto"
-        ? { deviceId: { exact: cameraId } }
-        : { facingMode: { ideal: "environment" } }
+      const constraints: MediaTrackConstraints =
+        cameraId !== "auto" ? { deviceId: { exact: cameraId } } : { facingMode: { ideal: "environment" } }
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: constraints,
@@ -196,43 +198,46 @@ export default function ScanPage() {
         }
 
         const activeVideo = videoRef.current
-          const detector = detectorRef.current
-          if (!activeVideo || activeVideo.readyState < 2) {
+        const detector = detectorRef.current
+        if (!activeVideo || activeVideo.readyState < 2) {
           return
         }
 
         busyRef.current = true
         try {
-            let rawValue: string | null = null
+          let rawValue: string | null = null
 
-            if (detector) {
-              const results = await detector.detect(activeVideo)
-              rawValue = results.find((entry) => typeof entry.rawValue === "string" && entry.rawValue.trim().length > 0)?.rawValue?.trim() ?? null
-            } else {
-              const width = activeVideo.videoWidth
-              const height = activeVideo.videoHeight
-              if (width > 0 && height > 0) {
-                let canvas = canvasRef.current
-                if (!canvas) {
-                  canvas = document.createElement("canvas")
-                  canvasRef.current = canvas
-                }
-                if (canvas.width !== width) {
-                  canvas.width = width
-                }
-                if (canvas.height !== height) {
-                  canvas.height = height
-                }
+          if (detector) {
+            const results = await detector.detect(activeVideo)
+            rawValue =
+              results
+                .find((entry) => typeof entry.rawValue === "string" && entry.rawValue.trim().length > 0)
+                ?.rawValue?.trim() ?? null
+          } else {
+            const width = activeVideo.videoWidth
+            const height = activeVideo.videoHeight
+            if (width > 0 && height > 0) {
+              let canvas = canvasRef.current
+              if (!canvas) {
+                canvas = document.createElement("canvas")
+                canvasRef.current = canvas
+              }
+              if (canvas.width !== width) {
+                canvas.width = width
+              }
+              if (canvas.height !== height) {
+                canvas.height = height
+              }
 
-                const context = canvas.getContext("2d", { willReadFrequently: true })
-                if (context) {
-                  context.drawImage(activeVideo, 0, 0, width, height)
-                  const imageData = context.getImageData(0, 0, width, height)
-                  const decoded = jsQR(imageData.data, width, height)
-                  rawValue = decoded?.data?.trim() ?? null
-                }
+              const context = canvas.getContext("2d", { willReadFrequently: true })
+              if (context) {
+                context.drawImage(activeVideo, 0, 0, width, height)
+                const imageData = context.getImageData(0, 0, width, height)
+                const decoded = jsQR(imageData.data, width, height)
+                rawValue = decoded?.data?.trim() ?? null
               }
             }
+          }
 
           if (!rawValue) {
             return
@@ -265,7 +270,6 @@ export default function ScanPage() {
     return () => {
       stopScanner()
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -277,7 +281,6 @@ export default function ScanPage() {
     return () => {
       window.removeEventListener("scan:restart", handleRestart)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCameraId])
 
   const restart = async () => {
@@ -313,19 +316,33 @@ export default function ScanPage() {
             <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
               <div className="grid gap-1.5">
                 <Label className="text-xs text-muted-foreground">{t("scanCameraPicker")}</Label>
-                <Select value={selectedCameraId} onValueChange={(value) => { void switchCamera(value) }} disabled={!supported || cameras.length <= 1 || resolving}>
+                <Select
+                  value={selectedCameraId}
+                  onValueChange={(value) => {
+                    void switchCamera(value)
+                  }}
+                  disabled={!supported || cameras.length <= 1 || resolving}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="auto">{t("scanCameraAuto")}</SelectItem>
                     {cameras.map((camera) => (
-                      <SelectItem key={camera.id} value={camera.id}>{camera.label}</SelectItem>
+                      <SelectItem key={camera.id} value={camera.id}>
+                        {camera.label}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <Button variant="outline" onClick={() => { void restart() }} disabled={resolving}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  void restart()
+                }}
+                disabled={resolving}
+              >
                 {t("scanCameraRestart")}
               </Button>
               <Button variant="ghost" onClick={() => stopScanner()} disabled={!running || resolving}>
@@ -339,7 +356,9 @@ export default function ScanPage() {
             </div>
 
             {lastScanValue ? (
-              <p className="text-xs text-muted-foreground">{t("scanLastValue")}: {lastScanValue}</p>
+              <p className="text-xs text-muted-foreground">
+                {t("scanLastValue")}: {lastScanValue}
+              </p>
             ) : null}
 
             {error ? <p className="text-xs text-destructive">{error}</p> : null}

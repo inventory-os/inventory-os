@@ -20,14 +20,7 @@ function normalizeOneTag(raw: string): string {
   return raw.trim().replace(/\s+/g, " ").slice(0, 40)
 }
 
-export function TagInput({
-  value,
-  onChange,
-  suggestions = [],
-  placeholder,
-  disabled,
-  className,
-}: TagInputProps) {
+export function TagInput({ value, onChange, suggestions = [], placeholder, disabled, className }: TagInputProps) {
   const [draft, setDraft] = useState("")
 
   const usedKeys = useMemo(() => new Set(value.map((entry) => entry.toLowerCase())), [value])

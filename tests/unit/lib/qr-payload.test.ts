@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest"
-import { buildAssetQrPayload, buildLocationQrPayload } from "@/lib/qr-payload"
+import { buildAssetQrPayload, buildLocationQrPayload } from "@/lib/utils/qr-payload"
 
 describe("qr-payload logic", () => {
   const originalDomain = process.env.APP_DOMAIN

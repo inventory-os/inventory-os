@@ -1,37 +1,44 @@
 // @vitest-environment jsdom
 
-import { renderHook, waitFor, act } from "@testing-library/react"
+import { renderHook, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { useCurrentUser } from "@/hooks/use-current-user"
 
+const mockUseAuthMeQuery = vi.fn()
+
+vi.mock("@/lib/trpc/react", () => ({
+  trpc: {
+    auth: {
+      me: {
+        useQuery: (...args: unknown[]) => mockUseAuthMeQuery(...args),
+      },
+    },
+  },
+}))
+
 describe("useCurrentUser hook", () => {
   beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn())
+    mockUseAuthMeQuery.mockReset()
   })
 
   afterEach(() => {
-    vi.unstubAllGlobals()
+    vi.clearAllMocks()
   })
 
   it("loads current user and exposes role helpers", async () => {
-    const fetchMock = vi.mocked(fetch)
-    fetchMock
-      .mockResolvedValueOnce(new Response(null, { status: 200 }))
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            authenticated: true,
-            user: {
-              id: "1",
-              memberId: "M-1",
-              email: "alex@example.com",
-              displayName: "Alex",
-              roles: ["admin", "member"],
-            },
-          }),
-          { status: 200 },
-        ),
-      )
+    mockUseAuthMeQuery.mockReturnValue({
+      data: {
+        authenticated: true,
+        user: {
+          id: "1",
+          memberId: "M-1",
+          email: "alex@example.com",
+          displayName: "Alex",
+          roles: ["admin", "member"],
+        },
+      },
+      isLoading: false,
+    })
 
     const { result } = renderHook(() => useCurrentUser())
 
@@ -42,17 +49,17 @@ describe("useCurrentUser hook", () => {
     expect(result.current.user?.email).toBe("alex@example.com")
     expect(result.current.isAdmin).toBe(true)
     expect(result.current.isMember).toBe(true)
-    expect(fetchMock).toHaveBeenCalledWith("/api/auth/refresh", expect.any(Object))
-    expect(fetchMock).toHaveBeenCalledWith("/api/auth/me", expect.any(Object))
+    expect(mockUseAuthMeQuery).toHaveBeenCalledWith(undefined, {
+      refetchInterval: 60_000,
+      refetchOnWindowFocus: true,
+    })
   })
 
-  it("handles unauthenticated fetch and refreshes on focus", async () => {
-    const fetchMock = vi.mocked(fetch)
-    fetchMock
-      .mockResolvedValueOnce(new Response(null, { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ authenticated: false }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(null, { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ authenticated: false }), { status: 200 }))
+  it("handles unauthenticated responses", async () => {
+    mockUseAuthMeQuery.mockReturnValue({
+      data: { authenticated: false },
+      isLoading: false,
+    })
 
     const { result } = renderHook(() => useCurrentUser())
 
@@ -61,13 +68,7 @@ describe("useCurrentUser hook", () => {
     })
 
     expect(result.current.user).toBeNull()
-
-    act(() => {
-      window.dispatchEvent(new Event("focus"))
-    })
-
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(4)
-    })
+    expect(result.current.isAdmin).toBe(false)
+    expect(result.current.isMember).toBe(false)
   })
 })

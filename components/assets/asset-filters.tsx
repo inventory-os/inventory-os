@@ -3,15 +3,9 @@
 import { Search, Plus } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { SearchableSelect } from "@/components/ui/searchable-select"
-import type { AssetStatus, AssetCategory } from "@/lib/data"
+import type { AssetStatus, AssetCategory } from "@/lib/types"
 import { useAppRuntime } from "@/components/app-runtime-provider"
 
 interface AssetFiltersProps {
@@ -57,10 +51,7 @@ export function AssetFilters({
             onChange={(e) => onSearchChange(e.target.value)}
           />
         </div>
-        <Select
-          value={statusFilter}
-          onValueChange={(v) => onStatusChange(v as AssetStatus | "all")}
-        >
+        <Select value={statusFilter} onValueChange={(v) => onStatusChange(v as AssetStatus | "all")}>
           <SelectTrigger className="h-9 w-[140px]">
             <SelectValue placeholder={t("assetTableStatus")} />
           </SelectTrigger>
@@ -87,10 +78,7 @@ export function AssetFilters({
         <SearchableSelect
           value={tagFilter}
           onValueChange={(v) => onTagChange(v as string | "all")}
-          items={[
-            { value: "all", label: t("filtersAllTags") },
-            ...tags.map((tag) => ({ value: tag, label: tag })),
-          ]}
+          items={[{ value: "all", label: t("filtersAllTags") }, ...tags.map((tag) => ({ value: tag, label: tag }))]}
           placeholder={t("commonTags")}
           searchPlaceholder={t("tagsSearchPlaceholder")}
           emptyLabel={t("globalSearchNoSectionResults")}

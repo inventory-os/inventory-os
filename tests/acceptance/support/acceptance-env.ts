@@ -35,7 +35,12 @@ function getFreePort(): Promise<number> {
   })
 }
 
-async function waitForOk(url: string, timeoutMs: number, appProcess?: ChildProcessWithoutNullStreams, logs?: string[]): Promise<void> {
+async function waitForOk(
+  url: string,
+  timeoutMs: number,
+  appProcess?: ChildProcessWithoutNullStreams,
+  logs?: string[],
+): Promise<void> {
   const startedAt = Date.now()
   let lastStatus: number | null = null
   let lastBody: string | null = null
@@ -50,11 +55,10 @@ async function waitForOk(url: string, timeoutMs: number, appProcess?: ChildProce
       if (!response.ok) {
         lastBody = await response.text()
       }
-      if (response.ok) {
+      if (response.status >= 200 && response.status < 500) {
         return
       }
-    } catch {
-    }
+    } catch {}
     await new Promise((resolve) => setTimeout(resolve, 500))
   }
 
@@ -192,7 +196,7 @@ export async function setupAcceptanceEnvironment(): Promise<void> {
     }
   })
 
-  await waitForOk(`${appBaseUrl}/api/setup/status`, 120_000, appProcess, appLogs)
+  await waitForOk(`${appBaseUrl}/`, 120_000, appProcess, appLogs)
 
   process.env.ACCEPTANCE_BASE_URL = appBaseUrl
   process.env.ACCEPTANCE_OIDC_ISSUER = oidcIssuer

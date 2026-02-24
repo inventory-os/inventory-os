@@ -9,9 +9,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DataTablePagination } from "@/components/ui/data-table-pagination"
 import { Badge } from "@/components/ui/badge"
+import { IsAdmin } from "@/components/is-admin"
 import { useCurrentUser } from "@/hooks/use-current-user"
-import type { ActivityRecord } from "@/lib/data"
+import type { ActivityRecord } from "@/lib/types"
 import { useAppRuntime } from "@/components/app-runtime-provider"
+import { trpc } from "@/lib/trpc/react"
 
 type ActivityResponse = {
   events: ActivityRecord[]
@@ -59,134 +61,133 @@ function formatRelative(value: string): string {
 export default function ActivityPage() {
   const { t } = useAppRuntime()
   const { isAdmin, loading: userLoading } = useCurrentUser()
-  const [events, setEvents] = useState<ActivityRecord[]>([])
   const [search, setSearch] = useState("")
   const [type, setType] = useState("all")
   const [page, setPage] = useState(1)
   const [pageSize] = useState(25)
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(false)
 
-  useEffect(() => {
-    if (userLoading || !isAdmin) {
-      return
-    }
+  const activityQuery = trpc.activity.list.useQuery(
+    {
+      page,
+      pageSize,
+      search,
+      type,
+    },
+    {
+      enabled: !userLoading && isAdmin,
+      staleTime: 10_000,
+    },
+  )
 
-    const load = async () => {
-      setLoading(true)
-      try {
-        const params = new URLSearchParams({
-          page: String(page),
-          pageSize: String(pageSize),
-          search,
-          type,
-        })
-
-        const response = await fetch(`/api/activity?${params.toString()}`, { cache: "no-store" })
-        if (!response.ok) {
-          setEvents([])
-          setTotal(0)
-          return
-        }
-
-        const payload = (await response.json()) as ActivityResponse
-        setEvents(payload.events)
-        setTotal(payload.pagination.total)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    void load()
-  }, [isAdmin, userLoading, page, pageSize, search, type])
+  const payload = (activityQuery.data as ActivityResponse | undefined) ?? {
+    events: [],
+    pagination: { page: 1, pageSize, total: 0, totalPages: 1 },
+  }
+  const events: ActivityRecord[] = payload.events
+  const total = payload.pagination.total
+  const loading = activityQuery.isLoading || activityQuery.isFetching
 
   useEffect(() => {
     setPage(1)
   }, [search, type])
 
   if (userLoading) {
-    return <AppShell><PageHeader title={t("activityTitle")} breadcrumbs={[{ label: t("activityTitle") }]} /></AppShell>
-  }
-
-  if (!isAdmin) {
     return (
       <AppShell>
         <PageHeader title={t("activityTitle")} breadcrumbs={[{ label: t("activityTitle") }]} />
-        <div className="app-page">
-          <Card className="app-surface">
-            <CardContent className="py-8 text-sm text-muted-foreground">{t("activityAdminOnly")}</CardContent>
-          </Card>
-        </div>
       </AppShell>
     )
   }
 
   return (
     <AppShell>
-      <PageHeader title={t("activityTitle")} breadcrumbs={[{ label: t("navSettings") }, { label: t("activityTitle") }]} />
-      <div className="app-page">
-        <div className="app-hero">
-          <h1 className="text-2xl font-semibold tracking-tight">{t("activityTitle")}</h1>
-          <p className="text-sm text-muted-foreground">{t("activitySubtitle")}</p>
-        </div>
+      <PageHeader
+        title={t("activityTitle")}
+        breadcrumbs={[{ label: t("navSettings") }, { label: t("activityTitle") }]}
+      />
+      <IsAdmin
+        isAdmin={isAdmin}
+        loading={userLoading}
+        fallback={
+          <div className="app-page">
+            <Card className="app-surface">
+              <CardContent className="py-8 text-sm text-muted-foreground">{t("activityAdminOnly")}</CardContent>
+            </Card>
+          </div>
+        }
+      >
+        <div className="app-page">
+          <div className="app-hero">
+            <h1 className="text-2xl font-semibold tracking-tight">{t("activityTitle")}</h1>
+            <p className="text-sm text-muted-foreground">{t("activitySubtitle")}</p>
+          </div>
 
-        <Card className="app-surface">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">{t("activityFilters")}</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-3 sm:grid-cols-[1fr_220px]">
-            <div className="grid gap-2">
-              <Label className="text-xs">{t("activitySearch")}</Label>
-              <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("activitySearchPlaceholder")} />
-            </div>
-            <div className="grid gap-2">
-              <Label className="text-xs">{t("activityType")}</Label>
-              <Select value={type} onValueChange={setType}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {typeOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>{t(option.labelKey)}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
+          <Card className="app-surface">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium">{t("activityFilters")}</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-3 sm:grid-cols-[1fr_220px]">
+              <div className="grid gap-2">
+                <Label className="text-xs">{t("activitySearch")}</Label>
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder={t("activitySearchPlaceholder")}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label className="text-xs">{t("activityType")}</Label>
+                <Select value={type} onValueChange={setType}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {typeOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {t(option.labelKey)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
 
-        <Card className="app-surface">
-          <CardContent className="p-0">
-            {loading ? (
-              <div className="px-4 py-8 text-sm text-muted-foreground">{t("activityLoading")}</div>
-            ) : events.length === 0 ? (
-              <div className="px-4 py-8 text-sm text-muted-foreground">{t("activityEmpty")}</div>
-            ) : (
-              <div className="divide-y">
-                {events.map((event) => (
-                  <div key={event.id} className="flex items-start gap-3 px-4 py-3">
-                    <div className="mt-1 size-2 rounded-full bg-primary/60" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-medium">{event.actorName}</span>
-                        <Badge variant="outline" className="text-[10px]">{event.type}</Badge>
-                      </div>
-                      <p className="line-clamp-2 text-xs text-muted-foreground">{event.message}</p>
-                      <div className="mt-1 text-[11px] text-muted-foreground">
-                        {event.subjectName ?? event.subjectId ?? "—"} · {formatRelative(event.createdAt)}
+          <Card className="app-surface">
+            <CardContent className="p-0">
+              {loading ? (
+                <div className="px-4 py-8 text-sm text-muted-foreground">{t("activityLoading")}</div>
+              ) : events.length === 0 ? (
+                <div className="px-4 py-8 text-sm text-muted-foreground">{t("activityEmpty")}</div>
+              ) : (
+                <div className="divide-y">
+                  {events.map((event) => (
+                    <div key={event.id} className="flex items-start gap-3 px-4 py-3">
+                      <div className="mt-1 size-2 rounded-full bg-primary/60" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-sm font-medium">{event.actorName}</span>
+                          <Badge variant="outline" className="text-[10px]">
+                            {event.type}
+                          </Badge>
+                        </div>
+                        <p className="line-clamp-2 text-xs text-muted-foreground">{event.message}</p>
+                        <div className="mt-1 text-[11px] text-muted-foreground">
+                          {event.subjectName ?? event.subjectId ?? "—"} · {formatRelative(event.createdAt)}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-        <div className="flex justify-end">
-          <DataTablePagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} />
+          <div className="flex justify-end">
+            <DataTablePagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} />
+          </div>
         </div>
-      </div>
+      </IsAdmin>
     </AppShell>
   )
 }

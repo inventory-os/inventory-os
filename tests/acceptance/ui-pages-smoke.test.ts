@@ -1,7 +1,16 @@
 import { beforeAll, describe, expect, it } from "vitest"
 import { ensureBaseData, pageHtml } from "./support/http"
 
-const uiRoutes = ["/", "/assets", "/bookings", "/categories", "/locations", "/team", "/settings", "/search?q=acceptance"]
+const uiRoutes = [
+  "/",
+  "/assets",
+  "/bookings",
+  "/categories",
+  "/locations",
+  "/team",
+  "/settings",
+  "/search?q=acceptance",
+]
 
 describe("UI routes smoke acceptance (real runtime)", () => {
   beforeAll(async () => {

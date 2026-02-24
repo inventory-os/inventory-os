@@ -29,9 +29,10 @@ import {
   type AssetCategory,
   type AssetStatus,
   type LocationData,
-} from "@/lib/data"
+} from "@/lib/types"
 import { useCurrentUser } from "@/hooks/use-current-user"
 import { useAppRuntime } from "@/components/app-runtime-provider"
+import { trpc } from "@/lib/trpc/react"
 
 type AssetSortKey = "name" | "id" | "category" | "status" | "location" | "assignedTo" | "value"
 type SortDirection = "asc" | "desc"
@@ -40,6 +41,7 @@ export default function AssetsPage() {
   const router = useRouter()
   const { isAdmin } = useCurrentUser()
   const { t } = useAppRuntime()
+  const trpcUtils = trpc.useUtils()
   const [assets, setAssets] = useState<Asset[]>([])
   const [categories, setCategories] = useState<AssetCategory[]>([])
   const [locations, setLocations] = useState<LocationData[]>([])
@@ -69,50 +71,69 @@ export default function AssetsPage() {
     tags: [] as string[],
   })
 
-  const loadData = async () => {
-    const params = new URLSearchParams({
-      page: String(page),
-      pageSize: String(pageSize),
-      search,
-      status: statusFilter,
-      category: categoryFilter,
-      tag: tagFilter,
-    })
+  const createAssetMutation = trpc.assets.create.useMutation()
+  const removeAssetMutation = trpc.assets.remove.useMutation()
+  const duplicateAssetMutation = trpc.assets.duplicate.useMutation()
 
-    const [assetsResponse, locationsResponse, categoriesResponse, tagsResponse] = await Promise.all([
-      fetch(`/api/assets?${params.toString()}`, { cache: "no-store" }),
-      fetch("/api/locations", { cache: "no-store" }),
-      fetch("/api/categories", { cache: "no-store" }),
-      fetch("/api/tags", { cache: "no-store" }),
+  const loadData = async () => {
+    const [loadedAssets, loadedLocations, loadedCategories, loadedTags] = await Promise.all([
+      trpcUtils.assets.list.fetch(),
+      trpcUtils.locations.list.fetch(),
+      trpcUtils.categories.list.fetch(),
+      trpcUtils.assets.listTags.fetch(),
     ])
 
-    if (assetsResponse.ok) {
-      const payload = await assetsResponse.json()
-      setAssets(payload.assets)
-      setTotalAssets(payload.pagination?.total ?? payload.assets.length)
+    const searchTerms = search
+      .split(/\s+/)
+      .map((term) => term.trim().toLowerCase())
+      .filter(Boolean)
+
+    const filteredAssets = (loadedAssets ?? []).filter((asset) => {
+      const searchable = [
+        asset.id,
+        asset.name,
+        asset.category,
+        asset.status,
+        asset.location,
+        asset.assignedTo ?? "",
+        asset.producerName ?? "",
+        asset.model ?? "",
+        asset.serialNumber ?? "",
+        asset.sku ?? "",
+        asset.supplier ?? "",
+        asset.notes ?? "",
+        ...asset.tags,
+      ]
+        .join(" ")
+        .toLowerCase()
+
+      const matchesSearch = searchTerms.length === 0 || searchTerms.every((term) => searchable.includes(term))
+      const matchesStatus = statusFilter === "all" || asset.status === statusFilter
+      const matchesCategory = categoryFilter === "all" || asset.category === categoryFilter
+      const matchesTag =
+        tagFilter === "all" || asset.tags.some((entry) => entry.toLowerCase() === tagFilter.toLowerCase())
+
+      return matchesSearch && matchesStatus && matchesCategory && matchesTag
+    })
+
+    const start = (page - 1) * pageSize
+    const pagedAssets = filteredAssets.slice(start, start + pageSize)
+
+    setAssets(pagedAssets)
+    setTotalAssets(filteredAssets.length)
+
+    setLocations(loadedLocations ?? [])
+
+    const categoryNames = (loadedCategories ?? []).map((category: { name: string }) => category.name)
+    setCategories(categoryNames)
+    if (categoryNames.length > 0) {
+      setForm((prev) => ({
+        ...prev,
+        category: categoryNames.includes(prev.category) ? prev.category : categoryNames[0],
+      }))
     }
 
-    if (locationsResponse.ok) {
-      const payload = await locationsResponse.json()
-      setLocations(payload.locations)
-    }
-
-    if (categoriesResponse.ok) {
-      const payload = await categoriesResponse.json()
-      const categoryNames = (payload.managedCategories ?? []).map((category: { name: string }) => category.name)
-      setCategories(categoryNames)
-      if (categoryNames.length > 0) {
-        setForm((prev) => ({
-          ...prev,
-          category: categoryNames.includes(prev.category) ? prev.category : categoryNames[0],
-        }))
-      }
-    }
-
-    if (tagsResponse.ok) {
-      const payload = await tagsResponse.json()
-      setTagSuggestions(payload.tags ?? [])
-    }
+    setTagSuggestions(loadedTags ?? [])
   }
 
   useEffect(() => {
@@ -180,10 +201,8 @@ export default function AssetsPage() {
 
   const handleCreateAsset = async () => {
     setIsSaving(true)
-    const response = await fetch("/api/assets", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const response = await createAssetMutation
+      .mutateAsync({
         name: form.name,
         parentAssetId: form.parentAssetId === "none" ? null : form.parentAssetId,
         category: form.category,
@@ -192,8 +211,11 @@ export default function AssetsPage() {
         value: Number(form.value),
         purchaseDate: form.purchaseDate,
         tags: form.tags,
-      }),
-    })
+      })
+      .then(
+        () => ({ ok: true }),
+        () => ({ ok: false }),
+      )
     setIsSaving(false)
 
     if (!response.ok) {
@@ -215,7 +237,10 @@ export default function AssetsPage() {
   }
 
   const handleDeleteAsset = async (id: string) => {
-    const response = await fetch(`/api/assets/${id}`, { method: "DELETE" })
+    const response = await removeAssetMutation.mutateAsync({ id }).then(
+      () => ({ ok: true }),
+      () => ({ ok: false }),
+    )
     if (!response.ok) {
       return
     }
@@ -224,13 +249,15 @@ export default function AssetsPage() {
   }
 
   const handleDuplicateAsset = async (id: string) => {
-    const response = await fetch(`/api/assets/${id}/duplicate`, { method: "POST" })
-    if (!response.ok) {
+    const duplicated = await duplicateAssetMutation.mutateAsync({ sourceAssetId: id }).then(
+      (asset) => asset,
+      () => null,
+    )
+    if (!duplicated) {
       return
     }
 
-    const payload = await response.json()
-    const duplicatedId = payload.asset?.id as string | undefined
+    const duplicatedId = duplicated?.id
     if (duplicatedId) {
       router.push(`/assets/${duplicatedId}/edit`)
       return
@@ -240,24 +267,18 @@ export default function AssetsPage() {
   }
 
   const pendingDeleteAsset = pendingDeleteAssetId
-    ? assets.find((asset) => asset.id === pendingDeleteAssetId) ?? null
+    ? (assets.find((asset) => asset.id === pendingDeleteAssetId) ?? null)
     : null
-  const selectedParentAsset = form.parentAssetId === "none"
-    ? null
-    : assets.find((asset) => asset.id === form.parentAssetId) ?? null
+  const selectedParentAsset =
+    form.parentAssetId === "none" ? null : (assets.find((asset) => asset.id === form.parentAssetId) ?? null)
 
   return (
     <AppShell>
-      <PageHeader
-        title={t("navAssets")}
-        breadcrumbs={[{ label: t("navAssets") }]}
-      />
+      <PageHeader title={t("navAssets")} breadcrumbs={[{ label: t("navAssets") }]} />
       <div className="app-page">
         <div className="app-hero">
           <h1 className="text-2xl font-semibold tracking-tight">{t("navAssets")}</h1>
-          <p className="text-sm text-muted-foreground">
-            {t("assetsSubtitle")}
-          </p>
+          <p className="text-sm text-muted-foreground">{t("assetsSubtitle")}</p>
         </div>
 
         <AssetFilters
@@ -309,7 +330,9 @@ export default function AssetsPage() {
                       className={`flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs transition-colors ${active ? "bg-primary/10 text-primary" : "hover:bg-muted"}`}
                     >
                       <span className="truncate">{entry.name}</span>
-                      <Badge variant="secondary" className="ml-2 text-[10px]">{entry.count}</Badge>
+                      <Badge variant="secondary" className="ml-2 text-[10px]">
+                        {entry.count}
+                      </Badge>
                     </button>
                   )
                 })
@@ -330,7 +353,11 @@ export default function AssetsPage() {
 
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>
-                {t("showingCountOf", { current: sortedAssets.length, total: totalAssets, label: t("navAssets").toLowerCase() })}
+                {t("showingCountOf", {
+                  current: sortedAssets.length,
+                  total: totalAssets,
+                  label: t("navAssets").toLowerCase(),
+                })}
               </span>
               <DataTablePagination page={page} pageSize={pageSize} total={totalAssets} onPageChange={setPage} />
             </div>
@@ -357,145 +384,147 @@ export default function AssetsPage() {
       />
 
       {isAdmin ? (
-      <Dialog open={openCreate} onOpenChange={setOpenCreate}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("assetsCreateTitle")}</DialogTitle>
-            <DialogDescription>{t("assetsCreateDescription")}</DialogDescription>
-          </DialogHeader>
+        <Dialog open={openCreate} onOpenChange={setOpenCreate}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t("assetsCreateTitle")}</DialogTitle>
+              <DialogDescription>{t("assetsCreateDescription")}</DialogDescription>
+            </DialogHeader>
 
-          <div className="grid gap-3">
-            <div className="grid gap-2">
-              <Label htmlFor="asset-name">{t("commonName")}</Label>
-              <Input
-                id="asset-name"
-                value={form.name}
-                onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-                placeholder={'MacBook Pro 14"'}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3">
               <div className="grid gap-2">
-                <Label>{t("assetTableCategory")}</Label>
-                <SearchableSelect
-                  value={form.category}
-                  onValueChange={(value) => setForm((prev) => ({ ...prev, category: value as AssetCategory }))}
-                  items={categories.map((category) => ({
-                    value: category,
-                    label: category,
-                  }))}
-                  placeholder={t("assetTableCategory")}
-                  searchPlaceholder={t("assetTableCategory")}
-                  emptyLabel={t("globalSearchNoSectionResults")}
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label>{t("assetTableStatus")}</Label>
-                <Select
-                  value={form.status}
-                  onValueChange={(value) => setForm((prev) => ({ ...prev, status: value as AssetStatus }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="available">{t("statusAvailable")}</SelectItem>
-                    <SelectItem value="in-use">{t("statusInUse")}</SelectItem>
-                    <SelectItem value="maintenance">{t("statusMaintenance")}</SelectItem>
-                    <SelectItem value="retired">{t("statusRetired")}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="grid gap-2">
-                <Label>{t("assetParentAsset")}</Label>
-                <SearchableSelect
-                  value={form.parentAssetId}
-                  onValueChange={(value) => setForm((prev) => ({ ...prev, parentAssetId: value }))}
-                  items={[
-                    { value: "none", label: t("assetNoParentAsset") },
-                    ...assets.map((asset) => ({
-                      value: asset.id,
-                      label: asset.name,
-                      description: asset.id,
-                    })),
-                  ]}
-                  placeholder={t("assetParentAsset")}
-                  searchPlaceholder={t("assetsSearchPlaceholder")}
-                  emptyLabel={t("globalSearchNoSectionResults")}
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label>{t("assetTableLocation")}</Label>
-                <SearchableSelect
-                  value={form.locationId}
-                  onValueChange={(value) => setForm((prev) => ({ ...prev, locationId: value }))}
-                  disabled={Boolean(selectedParentAsset)}
-                  items={[
-                    { value: "none", label: t("assetUnassigned") },
-                    ...locations.map((location) => ({
-                      value: location.id,
-                      label: location.path,
-                    })),
-                  ]}
-                  placeholder={t("assetsChooseLocation")}
-                  searchPlaceholder={t("locationsSearch")}
-                  emptyLabel={t("globalSearchNoSectionResults")}
-                />
-                {selectedParentAsset ? (
-                  <p className="text-[11px] text-muted-foreground">{t("assetLocationInherited", { name: selectedParentAsset.name })}</p>
-                ) : null}
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="asset-value">{t("assetValue")}</Label>
+                <Label htmlFor="asset-name">{t("commonName")}</Label>
                 <Input
-                  id="asset-value"
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={form.value}
-                  onChange={(event) => setForm((prev) => ({ ...prev, value: event.target.value }))}
+                  id="asset-name"
+                  value={form.name}
+                  onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+                  placeholder={'MacBook Pro 14"'}
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-2">
+                  <Label>{t("assetTableCategory")}</Label>
+                  <SearchableSelect
+                    value={form.category}
+                    onValueChange={(value) => setForm((prev) => ({ ...prev, category: value as AssetCategory }))}
+                    items={categories.map((category) => ({
+                      value: category,
+                      label: category,
+                    }))}
+                    placeholder={t("assetTableCategory")}
+                    searchPlaceholder={t("assetTableCategory")}
+                    emptyLabel={t("globalSearchNoSectionResults")}
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label>{t("assetTableStatus")}</Label>
+                  <Select
+                    value={form.status}
+                    onValueChange={(value) => setForm((prev) => ({ ...prev, status: value as AssetStatus }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="available">{t("statusAvailable")}</SelectItem>
+                      <SelectItem value="in-use">{t("statusInUse")}</SelectItem>
+                      <SelectItem value="maintenance">{t("statusMaintenance")}</SelectItem>
+                      <SelectItem value="retired">{t("statusRetired")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-2">
+                  <Label>{t("assetParentAsset")}</Label>
+                  <SearchableSelect
+                    value={form.parentAssetId}
+                    onValueChange={(value) => setForm((prev) => ({ ...prev, parentAssetId: value }))}
+                    items={[
+                      { value: "none", label: t("assetNoParentAsset") },
+                      ...assets.map((asset) => ({
+                        value: asset.id,
+                        label: asset.name,
+                        description: asset.id,
+                      })),
+                    ]}
+                    placeholder={t("assetParentAsset")}
+                    searchPlaceholder={t("assetsSearchPlaceholder")}
+                    emptyLabel={t("globalSearchNoSectionResults")}
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label>{t("assetTableLocation")}</Label>
+                  <SearchableSelect
+                    value={form.locationId}
+                    onValueChange={(value) => setForm((prev) => ({ ...prev, locationId: value }))}
+                    disabled={Boolean(selectedParentAsset)}
+                    items={[
+                      { value: "none", label: t("assetUnassigned") },
+                      ...locations.map((location) => ({
+                        value: location.id,
+                        label: location.path,
+                      })),
+                    ]}
+                    placeholder={t("assetsChooseLocation")}
+                    searchPlaceholder={t("locationsSearch")}
+                    emptyLabel={t("globalSearchNoSectionResults")}
+                  />
+                  {selectedParentAsset ? (
+                    <p className="text-[11px] text-muted-foreground">
+                      {t("assetLocationInherited", { name: selectedParentAsset.name })}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="asset-value">{t("assetValue")}</Label>
+                  <Input
+                    id="asset-value"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={form.value}
+                    onChange={(event) => setForm((prev) => ({ ...prev, value: event.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-2">
+                  <Label htmlFor="purchase-date">{t("assetPurchaseDate")}</Label>
+                  <Input
+                    id="purchase-date"
+                    type="date"
+                    value={form.purchaseDate}
+                    onChange={(event) => setForm((prev) => ({ ...prev, purchaseDate: event.target.value }))}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="asset-tags">{t("commonTags")}</Label>
+                  <TagInput
+                    value={form.tags}
+                    onChange={(value) => setForm((prev) => ({ ...prev, tags: value }))}
+                    suggestions={tagSuggestions.map((entry) => entry.name)}
+                    placeholder={t("assetTagsPlaceholder")}
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="grid gap-2">
-                <Label htmlFor="purchase-date">{t("assetPurchaseDate")}</Label>
-                <Input
-                  id="purchase-date"
-                  type="date"
-                  value={form.purchaseDate}
-                  onChange={(event) => setForm((prev) => ({ ...prev, purchaseDate: event.target.value }))}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="asset-tags">{t("commonTags")}</Label>
-                <TagInput
-                  value={form.tags}
-                  onChange={(value) => setForm((prev) => ({ ...prev, tags: value }))}
-                  suggestions={tagSuggestions.map((entry) => entry.name)}
-                  placeholder={t("assetTagsPlaceholder")}
-                />
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpenCreate(false)}>
-              {t("commonCancel")}
-            </Button>
-            <Button disabled={isSaving || form.name.trim().length < 2} onClick={handleCreateAsset}>
-              {isSaving ? t("settingsSaving") : t("assetsCreateTitle")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setOpenCreate(false)}>
+                {t("commonCancel")}
+              </Button>
+              <Button disabled={isSaving || form.name.trim().length < 2} onClick={handleCreateAsset}>
+                {isSaving ? t("settingsSaving") : t("assetsCreateTitle")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       ) : null}
     </AppShell>
   )

@@ -1,25 +1,13 @@
 "use client"
 
 import Link from "next/link"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { StatusBadge } from "@/components/status-badge"
 import { Badge } from "@/components/ui/badge"
 import { ArrowDownAZ, ArrowUpAZ, ArrowUpDown, MoreHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import type { Asset } from "@/lib/data"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import type { Asset } from "@/lib/types"
 import { useAppRuntime } from "@/components/app-runtime-provider"
 
 type AssetSortKey = "name" | "id" | "category" | "status" | "location" | "assignedTo" | "value"
@@ -68,7 +56,15 @@ function SortableHead({
   )
 }
 
-export function AssetTable({ assets, onDeleteAsset, onDuplicateAsset, canManage = true, sortBy, sortDirection, onSortChange }: AssetTableProps) {
+export function AssetTable({
+  assets,
+  onDeleteAsset,
+  onDuplicateAsset,
+  canManage = true,
+  sortBy,
+  sortDirection,
+  onSortChange,
+}: AssetTableProps) {
   const { t, formatCurrency } = useAppRuntime()
 
   return (
@@ -76,13 +72,56 @@ export function AssetTable({ assets, onDeleteAsset, onDuplicateAsset, canManage 
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <SortableHead label={t("assetTableAsset")} sortKey="name" activeSort={sortBy} sortDirection={sortDirection} onSortChange={onSortChange} />
-            <SortableHead label={t("assetTableId")} sortKey="id" activeSort={sortBy} sortDirection={sortDirection} onSortChange={onSortChange} />
-            <SortableHead label={t("assetTableCategory")} sortKey="category" activeSort={sortBy} sortDirection={sortDirection} onSortChange={onSortChange} />
-            <SortableHead label={t("assetTableStatus")} sortKey="status" activeSort={sortBy} sortDirection={sortDirection} onSortChange={onSortChange} />
-            <SortableHead label={t("assetTableLocation")} sortKey="location" activeSort={sortBy} sortDirection={sortDirection} onSortChange={onSortChange} />
-            <SortableHead label={t("assetTableAssignedTo")} sortKey="assignedTo" activeSort={sortBy} sortDirection={sortDirection} onSortChange={onSortChange} />
-            <SortableHead label={t("assetTableValue")} sortKey="value" activeSort={sortBy} sortDirection={sortDirection} onSortChange={onSortChange} align="right" />
+            <SortableHead
+              label={t("assetTableAsset")}
+              sortKey="name"
+              activeSort={sortBy}
+              sortDirection={sortDirection}
+              onSortChange={onSortChange}
+            />
+            <SortableHead
+              label={t("assetTableId")}
+              sortKey="id"
+              activeSort={sortBy}
+              sortDirection={sortDirection}
+              onSortChange={onSortChange}
+            />
+            <SortableHead
+              label={t("assetTableCategory")}
+              sortKey="category"
+              activeSort={sortBy}
+              sortDirection={sortDirection}
+              onSortChange={onSortChange}
+            />
+            <SortableHead
+              label={t("assetTableStatus")}
+              sortKey="status"
+              activeSort={sortBy}
+              sortDirection={sortDirection}
+              onSortChange={onSortChange}
+            />
+            <SortableHead
+              label={t("assetTableLocation")}
+              sortKey="location"
+              activeSort={sortBy}
+              sortDirection={sortDirection}
+              onSortChange={onSortChange}
+            />
+            <SortableHead
+              label={t("assetTableAssignedTo")}
+              sortKey="assignedTo"
+              activeSort={sortBy}
+              sortDirection={sortDirection}
+              onSortChange={onSortChange}
+            />
+            <SortableHead
+              label={t("assetTableValue")}
+              sortKey="value"
+              activeSort={sortBy}
+              sortDirection={sortDirection}
+              onSortChange={onSortChange}
+              align="right"
+            />
             <TableHead className="w-10" />
           </TableRow>
         </TableHeader>
@@ -109,14 +148,14 @@ export function AssetTable({ assets, onDeleteAsset, onDuplicateAsset, canManage 
                     {asset.name}
                   </Link>
                   {asset.parentAssetName ? (
-                    <span className="text-[10px] text-muted-foreground">{t("assetChildOf", { name: asset.parentAssetName })}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {t("assetChildOf", { name: asset.parentAssetName })}
+                    </span>
                   ) : null}
                 </div>
               </TableCell>
               <TableCell>
-                <span className="font-mono text-xs text-muted-foreground">
-                  {asset.id}
-                </span>
+                <span className="font-mono text-xs text-muted-foreground">{asset.id}</span>
               </TableCell>
               <TableCell>
                 <Badge variant="secondary" className="text-[11px]">
@@ -126,17 +165,11 @@ export function AssetTable({ assets, onDeleteAsset, onDuplicateAsset, canManage 
               <TableCell>
                 <StatusBadge status={asset.status} />
               </TableCell>
-              <TableCell className="text-muted-foreground text-xs">
-                {asset.location}
-              </TableCell>
+              <TableCell className="text-muted-foreground text-xs">{asset.location}</TableCell>
               <TableCell className="text-xs">
-                {asset.assignedTo || (
-                  <span className="text-muted-foreground">{t("assetUnassigned")}</span>
-                )}
+                {asset.assignedTo || <span className="text-muted-foreground">{t("assetUnassigned")}</span>}
               </TableCell>
-              <TableCell className="text-right tabular-nums text-xs">
-                {formatCurrency(asset.value)}
-              </TableCell>
+              <TableCell className="text-right tabular-nums text-xs">{formatCurrency(asset.value)}</TableCell>
               <TableCell>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>

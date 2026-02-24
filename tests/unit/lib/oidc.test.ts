@@ -9,7 +9,7 @@ import {
   fetchUserInfo,
   getOidcConfig,
   resolveOidcAppRole,
-} from "@/lib/oidc"
+} from "@/lib/utils/oidc"
 
 describe("oidc logic", () => {
   const envSnapshot = { ...process.env }

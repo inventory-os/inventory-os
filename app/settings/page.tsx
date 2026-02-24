@@ -15,8 +15,9 @@ import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { SearchableSelect } from "@/components/ui/searchable-select"
-import type { AddressRecord, EuropeanLocale, NotificationPreferences, SecuritySettings } from "@/lib/data"
+import type { AddressRecord, EuropeanLocale, NotificationPreferences, SecuritySettings } from "@/lib/types"
 import { useAppRuntime } from "@/components/app-runtime-provider"
+import { trpc } from "@/lib/trpc/react"
 
 type LdapSettingsForm = {
   enabled: boolean
@@ -114,6 +115,14 @@ const DEFAULT_LDAP_SETTINGS: LdapSettingsForm = {
 
 export default function SettingsPage() {
   const { refresh, t } = useAppRuntime()
+  const trpcUtils = trpc.useUtils()
+
+  const saveGeneralMutation = trpc.settings.saveGeneral.useMutation()
+  const saveLdapMutation = trpc.integrations.saveLdapSettings.useMutation()
+  const runLdapSyncMutation = trpc.integrations.runLdapSync.useMutation()
+  const saveQrMutation = trpc.settings.saveQrPublic.useMutation()
+  const saveNotificationsMutation = trpc.settings.saveNotificationPreferences.useMutation()
+  const saveSecurityMutation = trpc.settings.saveSecuritySettings.useMutation()
   const [general, setGeneral] = useState<{
     appName: string
     organizationName: string
@@ -194,24 +203,13 @@ export default function SettingsPage() {
       setLoadingGeneral(true)
       setGeneralError(null)
       try {
-        const response = await fetch("/api/settings/general", { cache: "no-store" })
-        if (!response.ok) {
-          throw new Error("Failed to load general settings")
-        }
-        const payload = (await response.json()) as {
-          settings: {
-            appName: string
-            organizationName: string
-            locale: EuropeanLocale
-            currency: string
-          }
-        }
+        const payload = await trpcUtils.settings.general.fetch()
         if (!cancelled) {
           setGeneral({
-            appName: payload.settings.appName,
-            organizationName: payload.settings.organizationName,
-            locale: payload.settings.locale,
-            currency: payload.settings.currency,
+            appName: payload.appName,
+            organizationName: payload.organizationName,
+            locale: payload.locale,
+            currency: payload.currency,
           })
         }
       } catch (error) {
@@ -229,16 +227,10 @@ export default function SettingsPage() {
       setLoadingLdap(true)
       setLdapError(null)
       try {
-        const response = await fetch("/api/integrations/ldap", { cache: "no-store" })
-        if (!response.ok) {
-          throw new Error("Failed to load LDAP settings")
-        }
-        const payload = (await response.json()) as {
-          settings: Omit<LdapSettingsForm, "bindPassword"> & { updatedAt: string | null }
-        }
+        const payload = await trpcUtils.integrations.ldapSettings.fetch()
         if (!cancelled) {
           setLdap({
-            ...payload.settings,
+            ...payload,
             bindPassword: "",
           })
         }
@@ -257,19 +249,11 @@ export default function SettingsPage() {
       setLoadingQr(true)
       setQrError(null)
       try {
-        const response = await fetch("/api/settings/qr", { cache: "no-store" })
-        if (!response.ok) {
-          throw new Error("Failed to load QR settings")
-        }
-        const payload = (await response.json()) as {
-          settings: QrSettingsForm
-        }
+        const payload = await trpcUtils.settings.qrPublic.fetch()
         if (!cancelled) {
-          setQr(payload.settings)
+          setQr(payload as QrSettingsForm)
           setQrLinksDraft(
-            (payload.settings.extraLinks ?? [])
-              .map((entry) => `${entry.label} | ${entry.url}`)
-              .join("\n"),
+            ((payload as QrSettingsForm).extraLinks ?? []).map((entry) => `${entry.label} | ${entry.url}`).join("\n"),
           )
         }
       } catch (error) {
@@ -285,16 +269,11 @@ export default function SettingsPage() {
 
     async function loadAddressOptions() {
       try {
-        const response = await fetch("/api/addresses", { cache: "no-store" })
-        if (!response.ok) {
-          return
-        }
-        const payload = (await response.json()) as { addresses: AddressRecord[] }
+        const payload = await trpcUtils.addresses.list.fetch()
         if (!cancelled) {
-          setAddressOptions(payload.addresses ?? [])
+          setAddressOptions((payload ?? []) as AddressRecord[])
         }
-      } catch {
-      }
+      } catch {}
     }
 
     async function loadNotificationSettings() {
@@ -302,14 +281,9 @@ export default function SettingsPage() {
       setNotificationsError(null)
 
       try {
-        const response = await fetch("/api/settings/notifications", { cache: "no-store" })
-        if (!response.ok) {
-          throw new Error("Failed to load notification settings")
-        }
-
-        const payload = (await response.json()) as { settings: NotificationPreferences }
+        const payload = await trpcUtils.settings.notificationPreferences.fetch()
         if (!cancelled) {
-          setNotifications(payload.settings)
+          setNotifications(payload as NotificationPreferences)
         }
       } catch (error) {
         if (!cancelled) {
@@ -326,14 +300,9 @@ export default function SettingsPage() {
       setLoadingSecurity(true)
       setSecurityError(null)
       try {
-        const response = await fetch("/api/settings/security", { cache: "no-store" })
-        if (!response.ok) {
-          throw new Error("Failed to load security settings")
-        }
-
-        const payload = (await response.json()) as { settings: SecuritySettings }
+        const payload = await trpcUtils.settings.securityBundle.fetch()
         if (!cancelled) {
-          setSecurity(payload.settings)
+          setSecurity(payload.settings as SecuritySettings)
           setTrustedProxiesDraft(payload.settings.trustedProxies.join("\n"))
           setTrustedDomainsDraft(payload.settings.trustedDomains.join("\n"))
         }
@@ -352,14 +321,9 @@ export default function SettingsPage() {
       setLoadingManagementHealth(true)
       setManagementHealthError(null)
       try {
-        const response = await fetch("/api/settings/health", { cache: "no-store" })
-        if (!response.ok) {
-          throw new Error("Failed to load management health")
-        }
-
-        const payload = (await response.json()) as ManagementHealth
+        const payload = await trpcUtils.settings.healthStatus.fetch()
         if (!cancelled) {
-          setManagementHealth(payload)
+          setManagementHealth(payload as ManagementHealth)
         }
       } catch (error) {
         if (!cancelled) {
@@ -391,22 +355,13 @@ export default function SettingsPage() {
     setGeneralMessage(null)
 
     try {
-      const response = await fetch("/api/settings/general", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(general),
-      })
-
-      const payload = (await response.json()) as { settings?: { appName: string; organizationName: string; locale: EuropeanLocale; currency: string }; error?: string }
-      if (!response.ok || !payload.settings) {
-        throw new Error(payload.error ?? "Failed to save settings")
-      }
+      const settings = await saveGeneralMutation.mutateAsync(general)
 
       setGeneral({
-        appName: payload.settings.appName,
-        organizationName: payload.settings.organizationName,
-        locale: payload.settings.locale,
-        currency: payload.settings.currency,
+        appName: settings.appName,
+        organizationName: settings.organizationName,
+        locale: settings.locale,
+        currency: settings.currency,
       })
       setGeneralMessage(t("settingsSaved"))
       await refresh()
@@ -423,30 +378,21 @@ export default function SettingsPage() {
     setLdapMessage(null)
 
     try {
-      const response = await fetch("/api/integrations/ldap", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          enabled: ldap.enabled,
-          url: ldap.url,
-          bindDn: ldap.bindDn,
-          bindPassword: ldap.bindPassword,
-          baseDn: ldap.baseDn,
-          userFilter: ldap.userFilter,
-          usernameAttribute: ldap.usernameAttribute,
-          emailAttribute: ldap.emailAttribute,
-          nameAttribute: ldap.nameAttribute,
-          defaultRole: ldap.defaultRole,
-          syncIssuer: ldap.syncIssuer,
-        }),
+      const settings = await saveLdapMutation.mutateAsync({
+        enabled: ldap.enabled,
+        url: ldap.url,
+        bindDn: ldap.bindDn,
+        bindPassword: ldap.bindPassword,
+        baseDn: ldap.baseDn,
+        userFilter: ldap.userFilter,
+        usernameAttribute: ldap.usernameAttribute,
+        emailAttribute: ldap.emailAttribute,
+        nameAttribute: ldap.nameAttribute,
+        defaultRole: ldap.defaultRole as "admin" | "member",
+        syncIssuer: ldap.syncIssuer,
       })
 
-      const payload = (await response.json()) as { settings?: Omit<LdapSettingsForm, "bindPassword">; error?: string }
-      if (!response.ok || !payload.settings) {
-        throw new Error(payload.error ?? "Failed to save LDAP settings")
-      }
-
-      setLdap({ ...payload.settings, bindPassword: "" })
+      setLdap({ ...(settings as Omit<LdapSettingsForm, "bindPassword">), bindPassword: "" })
       setLdapMessage("LDAP settings saved")
     } catch (error) {
       setLdapError(error instanceof Error ? error.message : "Failed to save LDAP settings")
@@ -460,11 +406,7 @@ export default function SettingsPage() {
     setLdapError(null)
     setLdapMessage(null)
     try {
-      const response = await fetch("/api/integrations/ldap/sync", { method: "POST" })
-      const payload = (await response.json()) as { synced?: number; found?: number; error?: string }
-      if (!response.ok) {
-        throw new Error(payload.error ?? "LDAP sync failed")
-      }
+      const payload = await runLdapSyncMutation.mutateAsync()
       setLdapMessage(`LDAP sync complete: ${payload.synced ?? 0}/${payload.found ?? 0} users synced`)
     } catch (error) {
       setLdapError(error instanceof Error ? error.message : "LDAP sync failed")
@@ -491,25 +433,14 @@ export default function SettingsPage() {
         })
         .filter((entry) => entry.label.length > 0 && entry.url.length > 0)
 
-      const response = await fetch("/api/settings/qr", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...qr,
-          extraLinks: parsedLinks,
-        }),
+      const payload = await saveQrMutation.mutateAsync({
+        ...qr,
+        extraLinks: parsedLinks,
       })
 
-      const payload = (await response.json()) as { settings?: QrSettingsForm; error?: string }
-      if (!response.ok || !payload.settings) {
-        throw new Error(payload.error ?? "Failed to save QR settings")
-      }
-
-      setQr(payload.settings)
+      setQr(payload as QrSettingsForm)
       setQrLinksDraft(
-        (payload.settings.extraLinks ?? [])
-          .map((entry) => `${entry.label} | ${entry.url}`)
-          .join("\n"),
+        ((payload as QrSettingsForm).extraLinks ?? []).map((entry) => `${entry.label} | ${entry.url}`).join("\n"),
       )
       setQrMessage(t("settingsSaved"))
     } catch (error) {
@@ -558,24 +489,15 @@ export default function SettingsPage() {
     setNotificationsMessage(null)
 
     try {
-      const response = await fetch("/api/settings/notifications", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          checkoutAlerts: notifications.checkoutAlerts,
-          maintenanceAlerts: notifications.maintenanceAlerts,
-          bookingAlerts: notifications.bookingAlerts,
-          digestEnabled: notifications.digestEnabled,
-          lowInventoryAlerts: notifications.lowInventoryAlerts,
-        }),
+      const payload = await saveNotificationsMutation.mutateAsync({
+        checkoutAlerts: notifications.checkoutAlerts,
+        maintenanceAlerts: notifications.maintenanceAlerts,
+        bookingAlerts: notifications.bookingAlerts,
+        digestEnabled: notifications.digestEnabled,
+        lowInventoryAlerts: notifications.lowInventoryAlerts,
       })
 
-      const payload = (await response.json()) as { settings?: NotificationPreferences; error?: string }
-      if (!response.ok || !payload.settings) {
-        throw new Error(payload.error ?? "Failed to save notification settings")
-      }
-
-      setNotifications(payload.settings)
+      setNotifications(payload as NotificationPreferences)
       setNotificationsMessage(t("settingsSaved"))
     } catch (error) {
       setNotificationsError(error instanceof Error ? error.message : "Failed to save notification settings")
@@ -599,23 +521,14 @@ export default function SettingsPage() {
         .map((entry) => entry.trim())
         .filter(Boolean)
 
-      const response = await fetch("/api/settings/security", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          trustedProxies,
-          trustedDomains,
-        }),
+      const payload = await saveSecurityMutation.mutateAsync({
+        trustedProxies,
+        trustedDomains,
       })
 
-      const payload = (await response.json()) as { settings?: SecuritySettings; error?: string }
-      if (!response.ok || !payload.settings) {
-        throw new Error(payload.error ?? "Failed to save security settings")
-      }
-
-      setSecurity(payload.settings)
-      setTrustedProxiesDraft(payload.settings.trustedProxies.join("\n"))
-      setTrustedDomainsDraft(payload.settings.trustedDomains.join("\n"))
+      setSecurity(payload as SecuritySettings)
+      setTrustedProxiesDraft((payload as SecuritySettings).trustedProxies.join("\n"))
+      setTrustedDomainsDraft((payload as SecuritySettings).trustedDomains.join("\n"))
       setSecurityMessage(t("settingsSaved"))
     } catch (error) {
       setSecurityError(error instanceof Error ? error.message : "Failed to save security settings")
@@ -629,13 +542,8 @@ export default function SettingsPage() {
     setManagementHealthError(null)
 
     try {
-      const response = await fetch("/api/settings/health", { cache: "no-store" })
-      if (!response.ok) {
-        throw new Error("Failed to load management health")
-      }
-
-      const payload = (await response.json()) as ManagementHealth
-      setManagementHealth(payload)
+      const payload = await trpcUtils.settings.healthStatus.fetch()
+      setManagementHealth(payload as ManagementHealth)
     } catch (error) {
       setManagementHealthError(error instanceof Error ? error.message : "Failed to load management health")
     } finally {
@@ -649,9 +557,7 @@ export default function SettingsPage() {
       <div className="app-page">
         <div className="app-hero">
           <h1 className="text-2xl font-semibold tracking-tight">{t("navSettings")}</h1>
-          <p className="text-sm text-muted-foreground">
-            {t("settingsSubtitle")}
-          </p>
+          <p className="text-sm text-muted-foreground">{t("settingsSubtitle")}</p>
         </div>
 
         <Tabs defaultValue="general" className="gap-6">
@@ -664,12 +570,8 @@ export default function SettingsPage() {
           <TabsContent value="general" className="flex flex-col gap-6">
             <Card className="app-surface">
               <CardHeader>
-                <CardTitle className="text-base">
-                  {t("settingsWorkspaceInfoTitle")}
-                </CardTitle>
-                <CardDescription>
-                  {t("settingsWorkspaceInfoDescription")}
-                </CardDescription>
+                <CardTitle className="text-base">{t("settingsWorkspaceInfoTitle")}</CardTitle>
+                <CardDescription>{t("settingsWorkspaceInfoDescription")}</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-5">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -692,7 +594,9 @@ export default function SettingsPage() {
                     <Input
                       id="workspace-org"
                       value={general.organizationName}
-                      onChange={(event) => setGeneral((current) => ({ ...current, organizationName: event.target.value }))}
+                      onChange={(event) =>
+                        setGeneral((current) => ({ ...current, organizationName: event.target.value }))
+                      }
                       className="h-9"
                       disabled={loadingGeneral}
                     />
@@ -706,7 +610,9 @@ export default function SettingsPage() {
                     <Input
                       id="workspace-currency"
                       value={general.currency}
-                      onChange={(event) => setGeneral((current) => ({ ...current, currency: event.target.value.toUpperCase() }))}
+                      onChange={(event) =>
+                        setGeneral((current) => ({ ...current, currency: event.target.value.toUpperCase() }))
+                      }
                       className="h-9 uppercase"
                       maxLength={3}
                       disabled={loadingGeneral}
@@ -716,7 +622,17 @@ export default function SettingsPage() {
                 {generalError && <p className="text-xs text-destructive">{generalError}</p>}
                 {generalMessage && <p className="text-xs text-muted-foreground">{generalMessage}</p>}
                 <div className="flex justify-end">
-                  <Button size="sm" onClick={saveGeneralSettings} disabled={loadingGeneral || savingGeneral || general.appName.trim().length < 2 || general.organizationName.trim().length < 2 || general.currency.trim().length !== 3}>
+                  <Button
+                    size="sm"
+                    onClick={saveGeneralSettings}
+                    disabled={
+                      loadingGeneral ||
+                      savingGeneral ||
+                      general.appName.trim().length < 2 ||
+                      general.organizationName.trim().length < 2 ||
+                      general.currency.trim().length !== 3
+                    }
+                  >
                     {savingGeneral ? t("settingsSaving") : t("settingsSaveChanges")}
                   </Button>
                 </div>
@@ -726,9 +642,7 @@ export default function SettingsPage() {
             <Card className="app-surface">
               <CardHeader>
                 <CardTitle className="text-base">{t("settingsQrTitle")}</CardTitle>
-                <CardDescription>
-                  {t("settingsQrDescription")}
-                </CardDescription>
+                <CardDescription>{t("settingsQrDescription")}</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-5">
                 <div className="flex items-center justify-between rounded-md border px-4 py-3">
@@ -745,10 +659,14 @@ export default function SettingsPage() {
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="flex flex-col gap-2 sm:col-span-2">
-                    <Label htmlFor="qr-selected-address" className="text-xs">{t("settingsQrAddress")}</Label>
+                    <Label htmlFor="qr-selected-address" className="text-xs">
+                      {t("settingsQrAddress")}
+                    </Label>
                     <SearchableSelect
                       value={qr.selectedAddressId ?? "none"}
-                      onValueChange={(value) => setQr((current) => ({ ...current, selectedAddressId: value === "none" ? null : value }))}
+                      onValueChange={(value) =>
+                        setQr((current) => ({ ...current, selectedAddressId: value === "none" ? null : value }))
+                      }
                       items={[
                         { value: "none", label: t("settingsQrAddressNone") },
                         ...addressOptions.map((address) => ({
@@ -766,7 +684,9 @@ export default function SettingsPage() {
                   </div>
 
                   <div className="flex flex-col gap-2 sm:col-span-2">
-                    <Label htmlFor="qr-logo-url" className="text-xs">{t("settingsQrLogo")}</Label>
+                    <Label htmlFor="qr-logo-url" className="text-xs">
+                      {t("settingsQrLogo")}
+                    </Label>
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                       <Input
                         id="qr-logo-url"
@@ -796,7 +716,9 @@ export default function SettingsPage() {
                   </div>
 
                   <div className="flex flex-col gap-2 sm:col-span-2">
-                    <Label htmlFor="qr-owner-label" className="text-xs">{t("settingsQrOwnerLabel")}</Label>
+                    <Label htmlFor="qr-owner-label" className="text-xs">
+                      {t("settingsQrOwnerLabel")}
+                    </Label>
                     <Input
                       id="qr-owner-label"
                       value={qr.ownerLabel}
@@ -807,7 +729,9 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="flex flex-col gap-2 sm:col-span-2">
-                    <Label htmlFor="qr-public-message" className="text-xs">{t("settingsQrPublicMessage")}</Label>
+                    <Label htmlFor="qr-public-message" className="text-xs">
+                      {t("settingsQrPublicMessage")}
+                    </Label>
                     <Textarea
                       id="qr-public-message"
                       value={qr.publicMessage}
@@ -820,7 +744,9 @@ export default function SettingsPage() {
                   </div>
 
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="qr-contact-phone" className="text-xs">{t("settingsQrContactPhone")}</Label>
+                    <Label htmlFor="qr-contact-phone" className="text-xs">
+                      {t("settingsQrContactPhone")}
+                    </Label>
                     <Input
                       id="qr-contact-phone"
                       value={qr.contactPhone}
@@ -831,7 +757,9 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="qr-contact-email" className="text-xs">{t("settingsQrContactEmail")}</Label>
+                    <Label htmlFor="qr-contact-email" className="text-xs">
+                      {t("settingsQrContactEmail")}
+                    </Label>
                     <Input
                       id="qr-contact-email"
                       value={qr.contactEmail}
@@ -842,7 +770,9 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="flex flex-col gap-2 sm:col-span-2">
-                    <Label htmlFor="qr-website-url" className="text-xs">{t("settingsQrWebsite")}</Label>
+                    <Label htmlFor="qr-website-url" className="text-xs">
+                      {t("settingsQrWebsite")}
+                    </Label>
                     <Input
                       id="qr-website-url"
                       value={qr.websiteUrl}
@@ -853,7 +783,9 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="flex flex-col gap-2 sm:col-span-2">
-                    <Label htmlFor="qr-extra-links" className="text-xs">{t("settingsQrExtraLinks")}</Label>
+                    <Label htmlFor="qr-extra-links" className="text-xs">
+                      {t("settingsQrExtraLinks")}
+                    </Label>
                     <Textarea
                       id="qr-extra-links"
                       value={qrLinksDraft}
@@ -879,7 +811,9 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <Label htmlFor="qr-login-label" className="text-xs">{t("settingsQrLoginButtonText")}</Label>
+                  <Label htmlFor="qr-login-label" className="text-xs">
+                    {t("settingsQrLoginButtonText")}
+                  </Label>
                   <Input
                     id="qr-login-label"
                     value={qr.loginButtonText}
@@ -894,7 +828,11 @@ export default function SettingsPage() {
                 {qrMessage && <p className="text-xs text-muted-foreground">{qrMessage}</p>}
 
                 <div className="flex justify-end">
-                  <Button size="sm" onClick={saveQrSettings} disabled={loadingQr || savingQr || (qr.showLoginButton && qr.loginButtonText.trim().length < 2)}>
+                  <Button
+                    size="sm"
+                    onClick={saveQrSettings}
+                    disabled={loadingQr || savingQr || (qr.showLoginButton && qr.loginButtonText.trim().length < 2)}
+                  >
                     {savingQr ? t("settingsSaving") : t("settingsSaveChanges")}
                   </Button>
                 </div>
@@ -905,12 +843,8 @@ export default function SettingsPage() {
           <TabsContent value="notifications" className="flex flex-col gap-6">
             <Card className="app-surface">
               <CardHeader>
-                <CardTitle className="text-base">
-                  {t("settingsNotificationsTitle")}
-                </CardTitle>
-                <CardDescription>
-                  {t("settingsNotificationsDescription")}
-                </CardDescription>
+                <CardTitle className="text-base">{t("settingsNotificationsTitle")}</CardTitle>
+                <CardDescription>{t("settingsNotificationsDescription")}</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-1">
                 {[
@@ -918,13 +852,15 @@ export default function SettingsPage() {
                     title: t("settingsNotifCheckoutTitle"),
                     description: t("settingsNotifCheckoutDescription"),
                     checked: notifications.checkoutAlerts,
-                    onChange: (value: boolean) => setNotifications((current) => ({ ...current, checkoutAlerts: value })),
+                    onChange: (value: boolean) =>
+                      setNotifications((current) => ({ ...current, checkoutAlerts: value })),
                   },
                   {
                     title: t("settingsNotifMaintenanceTitle"),
                     description: t("settingsNotifMaintenanceDescription"),
                     checked: notifications.maintenanceAlerts,
-                    onChange: (value: boolean) => setNotifications((current) => ({ ...current, maintenanceAlerts: value })),
+                    onChange: (value: boolean) =>
+                      setNotifications((current) => ({ ...current, maintenanceAlerts: value })),
                   },
                   {
                     title: t("settingsNotifBookingsTitle"),
@@ -942,30 +878,37 @@ export default function SettingsPage() {
                     title: t("settingsNotifLowInventoryTitle"),
                     description: t("settingsNotifLowInventoryDescription"),
                     checked: notifications.lowInventoryAlerts,
-                    onChange: (value: boolean) => setNotifications((current) => ({ ...current, lowInventoryAlerts: value })),
+                    onChange: (value: boolean) =>
+                      setNotifications((current) => ({ ...current, lowInventoryAlerts: value })),
                   },
                 ].map((item, i) => (
                   <div key={i}>
                     <div className="flex items-center justify-between py-3">
                       <div className="flex flex-col gap-0.5">
-                        <span className="text-sm font-medium">
-                          {item.title}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {item.description}
-                        </span>
+                        <span className="text-sm font-medium">{item.title}</span>
+                        <span className="text-xs text-muted-foreground">{item.description}</span>
                       </div>
-                      <Switch checked={item.checked} onCheckedChange={item.onChange} disabled={loadingNotifications || savingNotifications} />
+                      <Switch
+                        checked={item.checked}
+                        onCheckedChange={item.onChange}
+                        disabled={loadingNotifications || savingNotifications}
+                      />
                     </div>
                     {i < 4 && <Separator />}
                   </div>
                 ))}
 
                 {notificationsError ? <p className="pt-2 text-xs text-destructive">{notificationsError}</p> : null}
-                {notificationsMessage ? <p className="pt-2 text-xs text-muted-foreground">{notificationsMessage}</p> : null}
+                {notificationsMessage ? (
+                  <p className="pt-2 text-xs text-muted-foreground">{notificationsMessage}</p>
+                ) : null}
 
                 <div className="flex justify-end pt-2">
-                  <Button size="sm" onClick={saveNotificationSettings} disabled={loadingNotifications || savingNotifications}>
+                  <Button
+                    size="sm"
+                    onClick={saveNotificationSettings}
+                    disabled={loadingNotifications || savingNotifications}
+                  >
                     {savingNotifications ? t("settingsSaving") : t("settingsSaveChanges")}
                   </Button>
                 </div>
@@ -977,9 +920,7 @@ export default function SettingsPage() {
             <Card className="app-surface">
               <CardHeader>
                 <CardTitle className="text-base">{t("settingsLdapTitle")}</CardTitle>
-                <CardDescription>
-                  {t("settingsLdapDescription")}
-                </CardDescription>
+                <CardDescription>{t("settingsLdapDescription")}</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-5">
                 <div className="flex items-center justify-between rounded-md border px-4 py-3">
@@ -996,7 +937,9 @@ export default function SettingsPage() {
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="flex flex-col gap-2 sm:col-span-2">
-                    <Label htmlFor="ldap-url" className="text-xs">{t("settingsLdapUrl")}</Label>
+                    <Label htmlFor="ldap-url" className="text-xs">
+                      {t("settingsLdapUrl")}
+                    </Label>
                     <Input
                       id="ldap-url"
                       value={ldap.url}
@@ -1007,7 +950,9 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="ldap-bind-dn" className="text-xs">{t("settingsLdapBindDn")}</Label>
+                    <Label htmlFor="ldap-bind-dn" className="text-xs">
+                      {t("settingsLdapBindDn")}
+                    </Label>
                     <Input
                       id="ldap-bind-dn"
                       value={ldap.bindDn}
@@ -1018,19 +963,25 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="ldap-bind-password" className="text-xs">{t("settingsLdapBindPassword")}</Label>
+                    <Label htmlFor="ldap-bind-password" className="text-xs">
+                      {t("settingsLdapBindPassword")}
+                    </Label>
                     <Input
                       id="ldap-bind-password"
                       type="password"
                       value={ldap.bindPassword}
                       onChange={(event) => setLdap((current) => ({ ...current, bindPassword: event.target.value }))}
-                      placeholder={ldap.hasBindPassword ? t("settingsLdapPasswordSaved") : t("settingsLdapPasswordEnter")}
+                      placeholder={
+                        ldap.hasBindPassword ? t("settingsLdapPasswordSaved") : t("settingsLdapPasswordEnter")
+                      }
                       className="h-9"
                       disabled={loadingLdap}
                     />
                   </div>
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="ldap-base-dn" className="text-xs">{t("settingsLdapBaseDn")}</Label>
+                    <Label htmlFor="ldap-base-dn" className="text-xs">
+                      {t("settingsLdapBaseDn")}
+                    </Label>
                     <Input
                       id="ldap-base-dn"
                       value={ldap.baseDn}
@@ -1041,7 +992,9 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="ldap-filter" className="text-xs">{t("settingsLdapUserFilter")}</Label>
+                    <Label htmlFor="ldap-filter" className="text-xs">
+                      {t("settingsLdapUserFilter")}
+                    </Label>
                     <Input
                       id="ldap-filter"
                       value={ldap.userFilter}
@@ -1051,17 +1004,23 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="ldap-username-attr" className="text-xs">{t("settingsLdapUsernameAttr")}</Label>
+                    <Label htmlFor="ldap-username-attr" className="text-xs">
+                      {t("settingsLdapUsernameAttr")}
+                    </Label>
                     <Input
                       id="ldap-username-attr"
                       value={ldap.usernameAttribute}
-                      onChange={(event) => setLdap((current) => ({ ...current, usernameAttribute: event.target.value }))}
+                      onChange={(event) =>
+                        setLdap((current) => ({ ...current, usernameAttribute: event.target.value }))
+                      }
                       className="h-9"
                       disabled={loadingLdap}
                     />
                   </div>
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="ldap-email-attr" className="text-xs">{t("settingsLdapEmailAttr")}</Label>
+                    <Label htmlFor="ldap-email-attr" className="text-xs">
+                      {t("settingsLdapEmailAttr")}
+                    </Label>
                     <Input
                       id="ldap-email-attr"
                       value={ldap.emailAttribute}
@@ -1071,7 +1030,9 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="ldap-name-attr" className="text-xs">{t("settingsLdapNameAttr")}</Label>
+                    <Label htmlFor="ldap-name-attr" className="text-xs">
+                      {t("settingsLdapNameAttr")}
+                    </Label>
                     <Input
                       id="ldap-name-attr"
                       value={ldap.nameAttribute}
@@ -1081,7 +1042,9 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="ldap-default-role" className="text-xs">{t("settingsLdapDefaultRole")}</Label>
+                    <Label htmlFor="ldap-default-role" className="text-xs">
+                      {t("settingsLdapDefaultRole")}
+                    </Label>
                     <Input
                       id="ldap-default-role"
                       value={ldap.defaultRole}
@@ -1092,7 +1055,9 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="ldap-sync-issuer" className="text-xs">{t("settingsLdapIssuer")}</Label>
+                    <Label htmlFor="ldap-sync-issuer" className="text-xs">
+                      {t("settingsLdapIssuer")}
+                    </Label>
                     <Input
                       id="ldap-sync-issuer"
                       value={ldap.syncIssuer}
@@ -1108,7 +1073,12 @@ export default function SettingsPage() {
                 {ldapMessage && <p className="text-xs text-muted-foreground">{ldapMessage}</p>}
 
                 <div className="flex justify-end gap-2">
-                  <Button variant="outline" size="sm" onClick={syncLdapUsers} disabled={loadingLdap || syncingLdap || savingLdap}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={syncLdapUsers}
+                    disabled={loadingLdap || syncingLdap || savingLdap}
+                  >
                     {syncingLdap ? t("settingsLdapSyncing") : t("settingsLdapSync")}
                   </Button>
                   <Button size="sm" onClick={saveLdapSettings} disabled={loadingLdap || savingLdap || syncingLdap}>
@@ -1135,7 +1105,9 @@ export default function SettingsPage() {
                   <CardContent className="flex flex-col gap-4">
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <div className="flex flex-col gap-2">
-                        <Label htmlFor="trusted-domains" className="text-xs">{t("settingsTrustedDomains")}</Label>
+                        <Label htmlFor="trusted-domains" className="text-xs">
+                          {t("settingsTrustedDomains")}
+                        </Label>
                         <Textarea
                           id="trusted-domains"
                           value={trustedDomainsDraft}
@@ -1146,7 +1118,9 @@ export default function SettingsPage() {
                         />
                       </div>
                       <div className="flex flex-col gap-2">
-                        <Label htmlFor="trusted-proxies" className="text-xs">{t("settingsTrustedProxies")}</Label>
+                        <Label htmlFor="trusted-proxies" className="text-xs">
+                          {t("settingsTrustedProxies")}
+                        </Label>
                         <Textarea
                           id="trusted-proxies"
                           value={trustedProxiesDraft}
@@ -1183,7 +1157,14 @@ export default function SettingsPage() {
                       <div className="rounded-md border px-3 py-2">
                         <p className="text-[11px] text-muted-foreground">{t("settingsHealthOverall")}</p>
                         <p className="mt-1">
-                          <Badge variant="outline" className={managementHealth?.overallOk ? "bg-success/10 text-success border-success/20" : "bg-destructive/10 text-destructive border-destructive/20"}>
+                          <Badge
+                            variant="outline"
+                            className={
+                              managementHealth?.overallOk
+                                ? "bg-success/10 text-success border-success/20"
+                                : "bg-destructive/10 text-destructive border-destructive/20"
+                            }
+                          >
                             {managementHealth?.overallOk ? t("settingsHealthOk") : t("settingsHealthFail")}
                           </Badge>
                         </p>
@@ -1191,7 +1172,14 @@ export default function SettingsPage() {
                       <div className="rounded-md border px-3 py-2">
                         <p className="text-[11px] text-muted-foreground">{t("settingsHealthProxy")}</p>
                         <p className="mt-1">
-                          <Badge variant="outline" className={managementHealth?.checks.proxy ? "bg-success/10 text-success border-success/20" : "bg-destructive/10 text-destructive border-destructive/20"}>
+                          <Badge
+                            variant="outline"
+                            className={
+                              managementHealth?.checks.proxy
+                                ? "bg-success/10 text-success border-success/20"
+                                : "bg-destructive/10 text-destructive border-destructive/20"
+                            }
+                          >
                             {managementHealth?.checks.proxy ? t("settingsHealthOk") : t("settingsHealthFail")}
                           </Badge>
                         </p>
@@ -1199,7 +1187,14 @@ export default function SettingsPage() {
                       <div className="rounded-md border px-3 py-2">
                         <p className="text-[11px] text-muted-foreground">{t("settingsHealthTls")}</p>
                         <p className="mt-1">
-                          <Badge variant="outline" className={managementHealth?.checks.tls ? "bg-success/10 text-success border-success/20" : "bg-destructive/10 text-destructive border-destructive/20"}>
+                          <Badge
+                            variant="outline"
+                            className={
+                              managementHealth?.checks.tls
+                                ? "bg-success/10 text-success border-success/20"
+                                : "bg-destructive/10 text-destructive border-destructive/20"
+                            }
+                          >
                             {managementHealth?.checks.tls ? t("settingsHealthOk") : t("settingsHealthFail")}
                           </Badge>
                         </p>
@@ -1207,7 +1202,14 @@ export default function SettingsPage() {
                       <div className="rounded-md border px-3 py-2">
                         <p className="text-[11px] text-muted-foreground">{t("settingsHealthDatabase")}</p>
                         <p className="mt-1">
-                          <Badge variant="outline" className={managementHealth?.checks.database ? "bg-success/10 text-success border-success/20" : "bg-destructive/10 text-destructive border-destructive/20"}>
+                          <Badge
+                            variant="outline"
+                            className={
+                              managementHealth?.checks.database
+                                ? "bg-success/10 text-success border-success/20"
+                                : "bg-destructive/10 text-destructive border-destructive/20"
+                            }
+                          >
                             {managementHealth?.checks.database ? t("settingsHealthOk") : t("settingsHealthFail")}
                           </Badge>
                         </p>
@@ -1215,7 +1217,14 @@ export default function SettingsPage() {
                       <div className="rounded-md border px-3 py-2">
                         <p className="text-[11px] text-muted-foreground">{t("settingsHealthMemory")}</p>
                         <p className="mt-1">
-                          <Badge variant="outline" className={managementHealth?.checks.memory ? "bg-success/10 text-success border-success/20" : "bg-destructive/10 text-destructive border-destructive/20"}>
+                          <Badge
+                            variant="outline"
+                            className={
+                              managementHealth?.checks.memory
+                                ? "bg-success/10 text-success border-success/20"
+                                : "bg-destructive/10 text-destructive border-destructive/20"
+                            }
+                          >
                             {managementHealth?.checks.memory ? t("settingsHealthOk") : t("settingsHealthFail")}
                           </Badge>
                         </p>
@@ -1256,8 +1265,16 @@ export default function SettingsPage() {
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                       <div className="rounded-md border px-3 py-2">
                         <p className="text-[11px] text-muted-foreground">{t("settingsHealthServer")}</p>
-                        <p className="text-xs">{managementHealth ? `${managementHealth.server.platform}/${managementHealth.server.arch}` : "—"}</p>
-                        <p className="text-xs text-muted-foreground">{managementHealth ? `${managementHealth.server.nodeVersion} • ${managementHealth.server.cpuCount} CPU` : ""}</p>
+                        <p className="text-xs">
+                          {managementHealth
+                            ? `${managementHealth.server.platform}/${managementHealth.server.arch}`
+                            : "—"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {managementHealth
+                            ? `${managementHealth.server.nodeVersion} • ${managementHealth.server.cpuCount} CPU`
+                            : ""}
+                        </p>
                       </div>
                       <div className="rounded-md border px-3 py-2">
                         <p className="text-[11px] text-muted-foreground">{t("settingsHealthTls")}</p>
@@ -1274,13 +1291,20 @@ export default function SettingsPage() {
                     {managementHealthError ? <p className="text-xs text-destructive">{managementHealthError}</p> : null}
 
                     <div className="flex justify-end">
-                      <Button variant="outline" size="sm" onClick={refreshManagementHealth} disabled={loadingManagementHealth}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={refreshManagementHealth}
+                        disabled={loadingManagementHealth}
+                      >
                         {loadingManagementHealth ? t("settingsLoadingHealth") : t("settingsRunHealthCheck")}
                       </Button>
                     </div>
 
                     <p className="text-[11px] text-muted-foreground">
-                      {managementHealth?.checkedAt ? `${t("settingsHealthLastChecked")}: ${new Date(managementHealth.checkedAt).toLocaleString()}` : ""}
+                      {managementHealth?.checkedAt
+                        ? `${t("settingsHealthLastChecked")}: ${new Date(managementHealth.checkedAt).toLocaleString()}`
+                        : ""}
                     </p>
                   </CardContent>
                 </Card>

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
-import { deleteAssetFileRecord, getAssetFileById } from "@/lib/core-repository"
-import { readStoredAssetFile, removeStoredAssetFile } from "@/lib/asset-storage"
+import { deleteAssetFileRecord, getAssetFileById } from "@/lib/services"
+import { readStoredAssetFile, removeStoredAssetFile } from "@/lib/services/asset-storage.service"
 
 function sanitizeDownloadName(value: string): string {
   return value.replace(/[\r\n]/g, "_")

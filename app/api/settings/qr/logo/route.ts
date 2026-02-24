@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 import path from "node:path"
-import { mkdir, writeFile } from "node:fs/promises"
 import { NextResponse } from "next/server"
+import { storeQrLogoFile } from "@/lib/services/asset-storage.service"
 
 const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"])
 
@@ -37,16 +37,14 @@ export async function POST(request: Request) {
   }
 
   const ext = extensionFor(mimeType, fileValue.name)
-  const fileName = `qr-logo-${Date.now()}-${randomUUID().slice(0, 8)}${ext}`
-
-  const publicDir = path.resolve(process.cwd(), "public", "uploads", "qr")
-  await mkdir(publicDir, { recursive: true })
-
   const bytes = Buffer.from(await fileValue.arrayBuffer())
-  const absolutePath = path.join(publicDir, fileName)
-  await writeFile(absolutePath, bytes)
+  const stored = await storeQrLogoFile({
+    originalName: fileValue.name || `qr-logo-${randomUUID().slice(0, 8)}${ext}`,
+    content: bytes,
+    extension: ext,
+  })
 
   return NextResponse.json({
-    url: `/uploads/qr/${fileName}`,
+    url: `/api/qr/logo/${encodeURIComponent(stored.fileName)}`,
   })
 }

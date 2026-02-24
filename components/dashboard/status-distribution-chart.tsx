@@ -1,13 +1,7 @@
 "use client"
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-} from "recharts"
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts"
 import { useAppRuntime } from "@/components/app-runtime-provider"
 
 type StatusDistributionPoint = {
@@ -31,14 +25,7 @@ export function StatusDistributionChart({ data }: { data: StatusDistributionPoin
           <div className="relative h-[200px] w-[200px] shrink-0">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie
-                  data={data}
-                  innerRadius={60}
-                  outerRadius={88}
-                  paddingAngle={4}
-                  dataKey="value"
-                  strokeWidth={0}
-                >
+                <Pie data={data} innerRadius={60} outerRadius={88} paddingAngle={4} dataKey="value" strokeWidth={0}>
                   {data.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
@@ -62,10 +49,7 @@ export function StatusDistributionChart({ data }: { data: StatusDistributionPoin
           <div className="flex flex-col gap-4">
             {data.map((item) => (
               <div key={item.name} className="flex items-center gap-3">
-                <div
-                  className="size-3 rounded-sm"
-                  style={{ backgroundColor: item.color }}
-                />
+                <div className="size-3 rounded-sm" style={{ backgroundColor: item.color }} />
                 <div className="flex flex-col">
                   <span className="text-xs font-medium">{item.name}</span>
                   <span className="text-[11px] text-muted-foreground">

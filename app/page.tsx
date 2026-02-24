@@ -1,6 +1,5 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import { AppShell } from "@/components/app-shell"
 import { PageHeader } from "@/components/page-header"
 import { StatCard } from "@/components/stat-card"
@@ -10,6 +9,7 @@ import { InventoryValueChart } from "@/components/dashboard/inventory-value-char
 import { TopCategories } from "@/components/dashboard/top-categories"
 import { DollarSign, Package, Users, MapPin, AlertTriangle } from "lucide-react"
 import { useAppRuntime } from "@/components/app-runtime-provider"
+import { trpc } from "@/lib/trpc/react"
 
 type DashboardStats = {
   totalAssets: number
@@ -24,7 +24,7 @@ type DashboardStats = {
 
 export default function DashboardPage() {
   const { t, formatCurrency, config } = useAppRuntime()
-  const [stats, setStats] = useState<DashboardStats>({
+  const fallbackStats: DashboardStats = {
     totalAssets: 0,
     activeUsers: 0,
     locations: 0,
@@ -33,38 +33,25 @@ export default function DashboardPage() {
     monthlyAssetGrowth: [],
     statusDistribution: [],
     inventoryValueByCategory: [],
+  }
+
+  const statsQuery = trpc.dashboard.stats.useQuery(undefined, {
+    staleTime: 60_000,
   })
 
-  useEffect(() => {
-    const loadStats = async () => {
-      const response = await fetch("/api/stats", { cache: "no-store" })
-      if (!response.ok) {
-        return
-      }
-      const payload = await response.json()
-      setStats(payload.stats)
-    }
-
-    loadStats()
-  }, [])
+  const stats = statsQuery.data ?? fallbackStats
 
   const currentMonthAdditions = stats.monthlyAssetGrowth[stats.monthlyAssetGrowth.length - 1]?.assets ?? 0
-  const totalAssetsChange = currentMonthAdditions > 0
-    ? t("statAddedThisMonth", { count: currentMonthAdditions })
-    : t("statNoAddedThisMonth")
+  const totalAssetsChange =
+    currentMonthAdditions > 0 ? t("statAddedThisMonth", { count: currentMonthAdditions }) : t("statNoAddedThisMonth")
 
   return (
     <AppShell>
-      <PageHeader
-        title={t("navDashboard")}
-        breadcrumbs={[{ label: t("navDashboard") }]}
-      />
+      <PageHeader title={t("navDashboard")} breadcrumbs={[{ label: t("navDashboard") }]} />
       <div className="app-page">
         <div className="app-hero">
           <h1 className="text-2xl font-semibold tracking-tight text-balance">{t("navDashboard")}</h1>
-          <p className="text-sm text-muted-foreground">
-            {t("dashboardSubtitle")}
-          </p>
+          <p className="text-sm text-muted-foreground">{t("dashboardSubtitle")}</p>
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
@@ -92,7 +79,9 @@ export default function DashboardPage() {
           <StatCard
             title={t("statMaintenance")}
             value={stats.maintenance}
-            change={t("statOfInventory", { percent: stats.totalAssets > 0 ? Math.round((stats.maintenance / stats.totalAssets) * 100) : 0 })}
+            change={t("statOfInventory", {
+              percent: stats.totalAssets > 0 ? Math.round((stats.maintenance / stats.totalAssets) * 100) : 0,
+            })}
             changeType="negative"
             icon={AlertTriangle}
           />

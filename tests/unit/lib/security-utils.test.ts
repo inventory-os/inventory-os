@@ -5,7 +5,7 @@ import {
   normalizeTrustEntries,
   parseForwardedFor,
   parseTrustEnvValue,
-} from "@/lib/security-utils"
+} from "@/lib/utils/security-utils"
 
 describe("security-utils logic", () => {
   it("normalizes trust entries and removes duplicates", () => {

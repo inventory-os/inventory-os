@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createCodeChallenge, createPkceVerifier, createState, discoverOidcMetadata, getOidcConfig } from "@/lib/oidc"
-import { toPublicErrorMessage } from "@/lib/api-error"
-import { notifyAuthIntegrationFailed } from "@/lib/core-repository"
-import { ensureTrustedNetwork } from "@/lib/request-security"
+import {
+  createCodeChallenge,
+  createPkceVerifier,
+  createState,
+  discoverOidcMetadata,
+  getOidcConfig,
+} from "@/lib/utils/oidc"
+import { toPublicErrorMessage } from "@/lib/utils/api-error"
+import { notifyAuthIntegrationFailed } from "@/lib/services"
+import { ensureTrustedNetwork } from "@/lib/services/request-security.service"
 
 function normalizeReturnTo(value: string | null): string {
   if (!value || !value.startsWith("/")) {
@@ -63,9 +69,6 @@ export async function GET(request: NextRequest) {
     return response
   } catch (error) {
     await notifyAuthIntegrationFailed(toPublicErrorMessage(error, "OIDC login setup failed"))
-    return NextResponse.json(
-      { error: toPublicErrorMessage(error, "OIDC login setup failed") },
-      { status: 500 },
-    )
+    return NextResponse.json({ error: toPublicErrorMessage(error, "OIDC login setup failed") }, { status: 500 })
   }
 }

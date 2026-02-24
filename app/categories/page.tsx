@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { AppShell } from "@/components/app-shell"
 import { PageHeader } from "@/components/page-header"
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog"
@@ -14,26 +14,16 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react"
-import { type ManagedCategory } from "@/lib/data"
-import { DEFAULT_UNCATEGORIZED_CATEGORY } from "@/lib/data"
+import { type ManagedCategory } from "@/lib/types"
+import { DEFAULT_UNCATEGORIZED_CATEGORY } from "@/lib/types"
 import { useCurrentUser } from "@/hooks/use-current-user"
 import { useAppRuntime } from "@/components/app-runtime-provider"
 import { DataTablePagination } from "@/components/ui/data-table-pagination"
+import { trpc } from "@/lib/trpc/react"
+import { IsAdmin } from "@/components/is-admin"
 
 export default function CategoriesPage() {
   const { isAdmin } = useCurrentUser()
@@ -50,27 +40,35 @@ export default function CategoriesPage() {
   const [pendingDeleteCategory, setPendingDeleteCategory] = useState<ManagedCategory | null>(null)
   const [page, setPage] = useState(1)
   const [pageSize] = useState(10)
-  const [totalCategories, setTotalCategories] = useState(0)
+  const managedCategoriesQuery = trpc.categories.list.useQuery(undefined, { staleTime: 30_000 })
+  const createCategoryMutation = trpc.categories.create.useMutation()
+  const updateCategoryMutation = trpc.categories.update.useMutation()
+  const deleteCategoryMutation = trpc.categories.remove.useMutation()
 
-  const loadCategories = async () => {
-    const params = new URLSearchParams({
-      page: String(page),
-      pageSize: String(pageSize),
-      search,
+  const filteredCategories = useMemo(() => {
+    const terms = search
+      .trim()
+      .toLowerCase()
+      .split(/\s+/)
+      .map((term) => term.trim())
+      .filter(Boolean)
+
+    const list = managedCategoriesQuery.data ?? []
+    return list.filter((category) => {
+      const searchable = `${category.name} ${category.id}`.toLowerCase()
+      return terms.length === 0 || terms.every((term) => searchable.includes(term))
     })
+  }, [managedCategoriesQuery.data, search])
 
-    const response = await fetch(`/api/categories?${params.toString()}`, { cache: "no-store" })
-    if (!response.ok) {
-      return
-    }
-    const payload = await response.json()
-    setCategories(payload.managedCategories ?? [])
-    setTotalCategories(payload.pagination?.total ?? payload.managedCategories?.length ?? 0)
-  }
+  const totalCategories = filteredCategories.length
+  const pagedCategories = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return filteredCategories.slice(start, start + pageSize)
+  }, [filteredCategories, page, pageSize])
 
   useEffect(() => {
-    void loadCategories()
-  }, [page, pageSize, search])
+    setCategories(pagedCategories)
+  }, [pagedCategories])
 
   useEffect(() => {
     setPage(1)
@@ -79,22 +77,16 @@ export default function CategoriesPage() {
   const handleCreate = async () => {
     setError(null)
     setIsSaving(true)
-    const response = await fetch("/api/categories", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: createName }),
-    })
-    setIsSaving(false)
-
-    if (!response.ok) {
-      const payload = await response.json().catch(() => null)
-      setError(payload?.error ?? t("categoriesCreateFailed"))
-      return
+    try {
+      await createCategoryMutation.mutateAsync({ name: createName })
+      await managedCategoriesQuery.refetch()
+      setCreateName("")
+      setOpenCreate(false)
+    } catch {
+      setError(t("categoriesCreateFailed"))
+    } finally {
+      setIsSaving(false)
     }
-
-    setCreateName("")
-    setOpenCreate(false)
-    await loadCategories()
   }
 
   const openEditDialog = (category: ManagedCategory) => {
@@ -111,55 +103,39 @@ export default function CategoriesPage() {
 
     setError(null)
     setIsSaving(true)
-    const response = await fetch(`/api/categories/${editingCategory.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: editName }),
-    })
-    setIsSaving(false)
-
-    if (!response.ok) {
-      const payload = await response.json().catch(() => null)
-      setError(payload?.error ?? t("categoriesUpdateFailed"))
-      return
+    try {
+      await updateCategoryMutation.mutateAsync({ id: editingCategory.id, name: editName })
+      await managedCategoriesQuery.refetch()
+      setOpenEdit(false)
+      setEditingCategory(null)
+      setEditName("")
+    } catch {
+      setError(t("categoriesUpdateFailed"))
+    } finally {
+      setIsSaving(false)
     }
-
-    setOpenEdit(false)
-    setEditingCategory(null)
-    setEditName("")
-    await loadCategories()
   }
 
   const handleDelete = async (category: ManagedCategory) => {
-    const response = await fetch(`/api/categories/${category.id}`, { method: "DELETE" })
-    if (!response.ok) {
-      return
-    }
-    await loadCategories()
+    await deleteCategoryMutation.mutateAsync({ id: category.id })
+    await managedCategoriesQuery.refetch()
   }
 
   return (
     <AppShell>
-      <PageHeader
-        title={t("navCategories")}
-        breadcrumbs={[{ label: t("navCategories") }]}
-      />
+      <PageHeader title={t("navCategories")} breadcrumbs={[{ label: t("navCategories") }]} />
       <div className="app-page">
         <div className="app-hero flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {t("navCategories")}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {t("categoriesSubtitle")}
-            </p>
+            <h1 className="text-2xl font-semibold tracking-tight">{t("navCategories")}</h1>
+            <p className="text-sm text-muted-foreground">{t("categoriesSubtitle")}</p>
           </div>
-          {isAdmin ? (
+          <IsAdmin isAdmin={isAdmin}>
             <Button size="sm" onClick={() => setOpenCreate(true)}>
               <Plus className="mr-1.5 size-3.5" />
               {t("categoriesNew")}
             </Button>
-          ) : null}
+          </IsAdmin>
         </div>
 
         <div className="app-surface space-y-3 p-4">
@@ -196,7 +172,7 @@ export default function CategoriesPage() {
                     <TableCell className="text-xs tabular-nums">{category.assetCount}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{category.id}</TableCell>
                     <TableCell>
-                      {isAdmin ? (
+                      <IsAdmin isAdmin={isAdmin}>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon" className="size-7">
@@ -219,7 +195,7 @@ export default function CategoriesPage() {
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
-                      ) : null}
+                      </IsAdmin>
                     </TableCell>
                   </TableRow>
                 ))
@@ -228,9 +204,7 @@ export default function CategoriesPage() {
           </Table>
 
           <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>
-              {t("categoriesShowing", { current: categories.length, total: totalCategories })}
-            </span>
+            <span>{t("categoriesShowing", { current: categories.length, total: totalCategories })}</span>
             <DataTablePagination page={page} pageSize={pageSize} total={totalCategories} onPageChange={setPage} />
           </div>
         </div>
@@ -262,11 +236,17 @@ export default function CategoriesPage() {
             <DialogDescription>{t("categoriesCreateDescription")}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-2">
-            <Input value={createName} onChange={(event) => setCreateName(event.target.value)} placeholder={t("categoriesNamePlaceholder")} />
+            <Input
+              value={createName}
+              onChange={(event) => setCreateName(event.target.value)}
+              placeholder={t("categoriesNamePlaceholder")}
+            />
             {error ? <p className="text-xs text-destructive">{error}</p> : null}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpenCreate(false)}>{t("commonCancel")}</Button>
+            <Button variant="outline" onClick={() => setOpenCreate(false)}>
+              {t("commonCancel")}
+            </Button>
             <Button onClick={handleCreate} disabled={isSaving || createName.trim().length < 2}>
               {isSaving ? t("settingsSaving") : t("commonCreate")}
             </Button>
@@ -281,11 +261,17 @@ export default function CategoriesPage() {
             <DialogDescription>{t("categoriesEditDescription")}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-2">
-            <Input value={editName} onChange={(event) => setEditName(event.target.value)} placeholder={t("categoriesNamePlaceholder")} />
+            <Input
+              value={editName}
+              onChange={(event) => setEditName(event.target.value)}
+              placeholder={t("categoriesNamePlaceholder")}
+            />
             {error ? <p className="text-xs text-destructive">{error}</p> : null}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpenEdit(false)}>{t("commonCancel")}</Button>
+            <Button variant="outline" onClick={() => setOpenEdit(false)}>
+              {t("commonCancel")}
+            </Button>
             <Button onClick={handleEdit} disabled={isSaving || editName.trim().length < 2}>
               {isSaving ? t("settingsSaving") : t("commonSave")}
             </Button>

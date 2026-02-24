@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from "vitest"
-import { createSessionToken, getSessionFromRequest, verifySessionToken } from "@/lib/auth-session"
+import { createSessionToken, getSessionFromRequest, verifySessionToken } from "@/lib/services/auth-session.service"
 
 describe("auth-session logic", () => {
   beforeEach(() => {
@@ -33,8 +33,10 @@ describe("auth-session logic", () => {
       roles: ["admin"],
     })
 
-    const [payload, signature] = token.split(".")
-    const tampered = `${payload}.x${signature?.slice(1) ?? ""}`
+    const [payload, signature = ""] = token.split(".")
+    const first = signature.slice(0, 1)
+    const replacement = first === "x" ? "y" : "x"
+    const tampered = `${payload}.${replacement}${signature.slice(1)}`
     expect(verifySessionToken(tampered)).toBeNull()
   })
 

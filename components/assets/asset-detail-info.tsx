@@ -24,27 +24,17 @@ import {
   Layers,
   Tags,
 } from "lucide-react"
-import type { Asset, LoanRecord } from "@/lib/data"
+import type { Asset, LoanRecord } from "@/lib/types"
 import { useAppRuntime } from "@/components/app-runtime-provider"
 
-function InfoRow({
-  icon: Icon,
-  label,
-  children,
-}: {
-  icon: LucideIcon
-  label: string
-  children: ReactNode
-}) {
+function InfoRow({ icon: Icon, label, children }: { icon: LucideIcon; label: string; children: ReactNode }) {
   return (
     <div className="flex items-start gap-3">
       <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-secondary">
         <Icon className="size-3.5 text-muted-foreground" />
       </div>
       <div className="flex flex-col gap-0.5">
-        <span className="text-[11px] font-medium text-muted-foreground">
-          {label}
-        </span>
+        <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
         <span className="text-sm">{children}</span>
       </div>
     </div>
@@ -61,9 +51,7 @@ export function AssetDetailInfo({ asset }: { asset: Asset }) {
         <div className="flex items-start justify-between">
           <div className="flex flex-col gap-1">
             <CardTitle className="text-lg">{asset.name}</CardTitle>
-            <span className="font-mono text-xs text-muted-foreground">
-              {asset.id}
-            </span>
+            <span className="font-mono text-xs text-muted-foreground">{asset.id}</span>
           </div>
           <StatusBadge status={asset.status} />
         </div>
@@ -85,11 +73,15 @@ export function AssetDetailInfo({ asset }: { asset: Asset }) {
             {asset.supplier ?? <span className="text-muted-foreground">—</span>}
           </InfoRow>
           <InfoRow icon={ShieldCheck} label={t("assetWarrantyUntil")}>
-            {asset.warrantyUntil ? formatDate(asset.warrantyUntil, {
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-            }) : <span className="text-muted-foreground">—</span>}
+            {asset.warrantyUntil ? (
+              formatDate(asset.warrantyUntil, {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              })
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
           </InfoRow>
           <InfoRow icon={ClipboardList} label={t("assetConditionStock")}>
             {`${asset.condition ?? "good"} • ${asset.quantity ?? 1} qty (min ${asset.minimumQuantity ?? 0})`}
@@ -154,9 +146,7 @@ export function AssetDetailInfo({ asset }: { asset: Asset }) {
         {asset.notes ? (
           <>
             <Separator />
-            <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground">
-              {asset.notes}
-            </div>
+            <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground">{asset.notes}</div>
           </>
         ) : null}
       </CardContent>
@@ -182,43 +172,39 @@ export function AssetCustodyHistory({ history }: { history: LoanRecord[] }) {
   }, [history, page])
 
   return (
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium">{t("assetCustodyHistory")}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-3">
-            {pagedHistory.map((entry) => {
-              const isCurrent = !entry.returnedAt
-              const action = isCurrent ? t("assetCheckedOut") : t("assetReturned")
-              const date = formatDate(isCurrent ? entry.borrowedAt : (entry.returnedAt ?? entry.borrowedAt), {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-              })
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-medium">{t("assetCustodyHistory")}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-col gap-3">
+          {pagedHistory.map((entry) => {
+            const isCurrent = !entry.returnedAt
+            const action = isCurrent ? t("assetCheckedOut") : t("assetReturned")
+            const date = formatDate(isCurrent ? entry.borrowedAt : (entry.returnedAt ?? entry.borrowedAt), {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })
 
-              return (
-              <div
-                key={entry.id}
-                className="flex items-center justify-between rounded-md border px-3 py-2.5"
-              >
+            return (
+              <div key={entry.id} className="flex items-center justify-between rounded-md border px-3 py-2.5">
                 <div className="flex items-center gap-2.5">
                   <Avatar className="size-6">
                     <AvatarFallback className="bg-secondary text-[9px]">
-                      {entry.memberName.split(" ").map((n) => n[0]).join("")}
+                      {entry.memberName
+                        .split(" ")
+                        .map((n) => n[0])
+                        .join("")}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex flex-col">
                     <span className="text-xs font-medium">{entry.memberName}</span>
-                    <span className="text-[11px] text-muted-foreground">
-                      {action}
-                    </span>
+                    <span className="text-[11px] text-muted-foreground">{action}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-muted-foreground">
-                    {date}
-                  </span>
+                  <span className="text-[11px] text-muted-foreground">{date}</span>
                   {isCurrent && (
                     <Badge className="text-[10px] bg-primary/10 text-primary border-primary/20" variant="outline">
                       {t("assetCurrent")}
@@ -226,41 +212,42 @@ export function AssetCustodyHistory({ history }: { history: LoanRecord[] }) {
                   )}
                 </div>
               </div>
-            )})}
-            {history.length === 0 && (
-              <div className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
-                {t("assetNoCustodyHistory")}
-              </div>
-            )}
-            {history.length > pageSize && (
-              <div className="flex items-center justify-between rounded-md border bg-muted/20 px-2.5 py-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs"
-                  disabled={page === 1}
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
-                >
-                  {t("uiPrevious")}
-                </Button>
-                <span className="text-[11px] text-muted-foreground">
-                  {page} / {totalPages}
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs"
-                  disabled={page === totalPages}
-                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-                >
-                  {t("uiNext")}
-                </Button>
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+            )
+          })}
+          {history.length === 0 && (
+            <div className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
+              {t("assetNoCustodyHistory")}
+            </div>
+          )}
+          {history.length > pageSize && (
+            <div className="flex items-center justify-between rounded-md border bg-muted/20 px-2.5 py-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                disabled={page === 1}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+              >
+                {t("uiPrevious")}
+              </Button>
+              <span className="text-[11px] text-muted-foreground">
+                {page} / {totalPages}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                disabled={page === totalPages}
+                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+              >
+                {t("uiNext")}
+              </Button>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   )
 }

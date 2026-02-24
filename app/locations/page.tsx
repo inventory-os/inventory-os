@@ -22,10 +22,25 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { SearchableSelect } from "@/components/ui/searchable-select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Plus, MapPin, Building2, Layers3, DoorOpen, Archive, FolderTree, ChevronDown, ChevronRight, Pencil, Search, ChevronsUpDown, Trash2 } from "lucide-react"
-import { type AddressRecord, type LocationData, type LocationKind } from "@/lib/data"
+import {
+  Plus,
+  MapPin,
+  Building2,
+  Layers3,
+  DoorOpen,
+  Archive,
+  FolderTree,
+  ChevronDown,
+  ChevronRight,
+  Pencil,
+  Search,
+  ChevronsUpDown,
+  Trash2,
+} from "lucide-react"
+import { type AddressRecord, type LocationData, type LocationKind } from "@/lib/types"
 import { useCurrentUser } from "@/hooks/use-current-user"
 import { useAppRuntime } from "@/components/app-runtime-provider"
+import { trpc } from "@/lib/trpc/react"
 
 const kindOptions: { value: LocationKind }[] = [
   { value: "building" },
@@ -94,51 +109,61 @@ export default function LocationsPage() {
     country: "",
   })
 
-  const loadLocations = async () => {
-    const response = await fetch("/api/locations", { cache: "no-store" })
-    if (!response.ok) {
-      return
-    }
-    const payload = await response.json()
-    setLocations(payload.locations)
-    const rootIds = (payload.locations as LocationData[])
-      .filter((entry) => !entry.parentId)
-      .map((entry) => entry.id)
-    setExpandedIds(new Set(rootIds))
-  }
+  const locationsQuery = trpc.locations.list.useQuery(undefined, {
+    staleTime: 30_000,
+  })
+  const addressesQuery = trpc.addresses.list.useQuery(undefined, {
+    staleTime: 30_000,
+  })
 
-  const loadAddresses = async () => {
-    const response = await fetch("/api/addresses", { cache: "no-store" })
-    if (!response.ok) {
-      return
-    }
-    const payload = await response.json()
-    setAddresses(payload.addresses)
-  }
+  const createLocationMutation = trpc.locations.create.useMutation()
+  const updateLocationMutation = trpc.locations.update.useMutation()
+  const deleteLocationMutation = trpc.locations.remove.useMutation()
+
+  const createAddressMutation = trpc.addresses.create.useMutation()
+  const updateAddressMutation = trpc.addresses.update.useMutation()
+  const deleteAddressMutation = trpc.addresses.remove.useMutation()
 
   useEffect(() => {
-    void Promise.all([loadLocations(), loadAddresses()])
-  }, [])
+    if (!locationsQuery.data) {
+      return
+    }
+
+    setLocations(locationsQuery.data)
+    const rootIds = locationsQuery.data.filter((entry) => !entry.parentId).map((entry) => entry.id)
+    setExpandedIds(new Set(rootIds))
+  }, [locationsQuery.data])
+
+  useEffect(() => {
+    if (!addressesQuery.data) {
+      return
+    }
+    setAddresses(addressesQuery.data)
+  }, [addressesQuery.data])
 
   const saveLocation = async () => {
     setSaving(true)
-    const response = await fetch("/api/locations", {
-      method: dialogMode === "create" ? "POST" : "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...(editingLocationId ? { id: editingLocationId } : {}),
-        name: form.name,
-        kind: form.kind,
-        addressId: form.addressId === "none" ? null : form.addressId,
-        floorNumber: form.floorNumber,
-        roomNumber: form.roomNumber,
-        parentId: form.parentId === "none" ? null : form.parentId,
-      }),
-    })
-    setSaving(false)
-    if (!response.ok) {
+    const payload = {
+      name: form.name,
+      kind: form.kind,
+      addressId: form.addressId === "none" ? null : form.addressId,
+      floorNumber: form.floorNumber || null,
+      roomNumber: form.roomNumber || null,
+      parentId: form.parentId === "none" ? null : form.parentId,
+    }
+
+    try {
+      if (dialogMode === "create") {
+        await createLocationMutation.mutateAsync(payload)
+      } else if (editingLocationId) {
+        await updateLocationMutation.mutateAsync({ id: editingLocationId, input: payload })
+      }
+    } catch {
+      setSaving(false)
       return
     }
+
+    setSaving(false)
 
     setOpen(false)
     setDialogMode("create")
@@ -152,7 +177,7 @@ export default function LocationsPage() {
       floorNumber: "",
       roomNumber: "",
     })
-    await Promise.all([loadLocations(), loadAddresses()])
+    await Promise.all([locationsQuery.refetch(), addressesQuery.refetch()])
   }
 
   const openCreateDialog = (parent?: LocationData) => {
@@ -215,39 +240,51 @@ export default function LocationsPage() {
 
   const saveAddress = async () => {
     setAddressSaving(true)
-    const response = await fetch(
-      addressDialogMode === "create" ? "/api/addresses" : `/api/addresses/${editingAddressId}`,
-      {
-        method: addressDialogMode === "create" ? "POST" : "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(addressForm),
-      },
-    )
-    setAddressSaving(false)
-    if (!response.ok) {
+
+    try {
+      if (addressDialogMode === "create") {
+        await createAddressMutation.mutateAsync({
+          ...addressForm,
+          addressLine2: addressForm.addressLine2 || null,
+        })
+      } else if (editingAddressId) {
+        await updateAddressMutation.mutateAsync({
+          id: editingAddressId,
+          input: {
+            ...addressForm,
+            addressLine2: addressForm.addressLine2 || null,
+          },
+        })
+      }
+    } catch {
+      setAddressSaving(false)
       return
     }
+
+    setAddressSaving(false)
 
     setAddressDialogOpen(false)
     setAddressDialogMode("create")
     setEditingAddressId(null)
-    await Promise.all([loadAddresses(), loadLocations()])
+    await Promise.all([addressesQuery.refetch(), locationsQuery.refetch()])
   }
 
   const removeAddress = async (addressId: string) => {
-    const response = await fetch(`/api/addresses/${addressId}`, { method: "DELETE" })
-    if (!response.ok) {
+    try {
+      await deleteAddressMutation.mutateAsync({ id: addressId })
+    } catch {
       return
     }
-    await Promise.all([loadAddresses(), loadLocations()])
+    await Promise.all([addressesQuery.refetch(), locationsQuery.refetch()])
   }
 
   const removeLocation = async (locationId: string) => {
-    const response = await fetch(`/api/locations/${locationId}`, { method: "DELETE" })
-    if (!response.ok) {
+    try {
+      await deleteLocationMutation.mutateAsync({ id: locationId })
+    } catch {
       return
     }
-    await loadLocations()
+    await locationsQuery.refetch()
   }
 
   const totalAssets = locations.reduce((sum, loc) => sum + loc.assetCount, 0)
@@ -287,7 +324,9 @@ export default function LocationsPage() {
       const kindOk = kindFilter === "all" || location.kind === kindFilter
       const textOk =
         !searchText ||
-        `${location.name} ${location.path} ${location.address} ${location.kind} ${location.locationCode ?? ""}`.toLowerCase().includes(searchText)
+        `${location.name} ${location.path} ${location.address} ${location.kind} ${location.locationCode ?? ""}`
+          .toLowerCase()
+          .includes(searchText)
       selfMatches.set(location.id, kindOk && textOk)
     }
 
@@ -460,9 +499,15 @@ export default function LocationsPage() {
 
           <div className="mb-3 flex items-center justify-between text-xs text-muted-foreground">
             <span>
-              {t("showingCountOf", { current: visibleRows.length, total: locations.length, label: t("navLocations").toLowerCase() })}
+              {t("showingCountOf", {
+                current: visibleRows.length,
+                total: locations.length,
+                label: t("navLocations").toLowerCase(),
+              })}
             </span>
-            <span>{rootLocations} {t("locationsRootNodes")}</span>
+            <span>
+              {rootLocations} {t("locationsRootNodes")}
+            </span>
           </div>
 
           <div className="max-h-[62vh] overflow-auto pr-1">
@@ -487,7 +532,9 @@ export default function LocationsPage() {
                 ) : (
                   visibleRows.map((location) => {
                     const Icon = kindIcons[location.kind]
-                    const childCount = (childrenByParent.get(location.id) ?? []).filter((entry) => visibleIds.has(entry.id)).length
+                    const childCount = (childrenByParent.get(location.id) ?? []).filter((entry) =>
+                      visibleIds.has(entry.id),
+                    ).length
                     const hasChildren = childCount > 0
                     const isExpanded = expandedIds.has(location.id)
 
@@ -502,7 +549,11 @@ export default function LocationsPage() {
                                 className="size-6"
                                 onClick={() => toggleExpanded(location.id)}
                               >
-                                {isExpanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                                {isExpanded ? (
+                                  <ChevronDown className="size-3.5" />
+                                ) : (
+                                  <ChevronRight className="size-3.5" />
+                                )}
                               </Button>
                             ) : (
                               <span className="inline-block w-6" />
@@ -512,7 +563,11 @@ export default function LocationsPage() {
                             </div>
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5">
-                                <Link href={`/locations/${location.id}`} className="truncate text-sm font-medium hover:text-primary" title={location.name}>
+                                <Link
+                                  href={`/locations/${location.id}`}
+                                  className="truncate text-sm font-medium hover:text-primary"
+                                  title={location.name}
+                                >
                                   {location.name}
                                 </Link>
                                 {location.locationCode ? (
@@ -521,7 +576,9 @@ export default function LocationsPage() {
                                   </Badge>
                                 ) : null}
                               </div>
-                              <p className="truncate text-[11px] text-muted-foreground" title={location.path}>{location.path}</p>
+                              <p className="truncate text-[11px] text-muted-foreground" title={location.path}>
+                                {location.path}
+                              </p>
                             </div>
                           </div>
                         </TableCell>
@@ -530,7 +587,10 @@ export default function LocationsPage() {
                             {t(kindLabelKeys[location.kind])}
                           </Badge>
                         </TableCell>
-                        <TableCell className="max-w-[320px] truncate text-xs text-muted-foreground" title={location.address}>
+                        <TableCell
+                          className="max-w-[320px] truncate text-xs text-muted-foreground"
+                          title={location.address}
+                        >
                           {location.address}
                         </TableCell>
                         <TableCell className="text-right text-xs tabular-nums">{location.directAssetCount}</TableCell>
@@ -538,13 +598,28 @@ export default function LocationsPage() {
                         <TableCell>
                           {isAdmin ? (
                             <div className="flex items-center justify-end gap-1">
-                              <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => openEditDialog(location)}>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 px-2"
+                                onClick={() => openEditDialog(location)}
+                              >
                                 <Pencil className="size-3.5" />
                               </Button>
-                              <Button size="sm" variant="outline" className="h-8" onClick={() => openCreateDialog(location)}>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8"
+                                onClick={() => openCreateDialog(location)}
+                              >
                                 <Plus className="size-3.5" />
                               </Button>
-                              <Button size="sm" variant="outline" className="h-8" onClick={() => setPendingDeleteLocation(location)}>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8"
+                                onClick={() => setPendingDeleteLocation(location)}
+                              >
                                 <Trash2 className="size-3.5" />
                               </Button>
                             </div>
@@ -598,10 +673,20 @@ export default function LocationsPage() {
                     <TableCell>
                       {isAdmin ? (
                         <div className="flex items-center justify-end gap-1">
-                          <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => openEditAddressDialog(address)}>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 px-2"
+                            onClick={() => openEditAddressDialog(address)}
+                          >
                             <Pencil className="size-3.5" />
                           </Button>
-                          <Button size="sm" variant="outline" className="h-8" onClick={() => setPendingDeleteAddress(address)}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8"
+                            onClick={() => setPendingDeleteAddress(address)}
+                          >
                             <Trash2 className="size-3.5" />
                           </Button>
                         </div>
@@ -654,181 +739,225 @@ export default function LocationsPage() {
       />
 
       {isAdmin ? (
-      <>
-      <Dialog
-        open={open}
-        onOpenChange={(next) => {
-          setOpen(next)
-          if (!next) {
-            setDialogMode("create")
-            setEditingLocationId(null)
-            setDialogParent(null)
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{dialogMode === "create" ? t("locationsCreateTitle") : t("locationsEditTitle")}</DialogTitle>
-            <DialogDescription className="break-words">
-              {dialogMode === "create"
-                ? dialogParent
-                  ? t("locationsCreateChildUnder", { path: dialogParent.path })
-                  : t("locationsCreateRootDescription")
-                : t("locationsEditDescription")}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <div className="grid gap-2">
-              <Label>{t("commonName")}</Label>
-              <Input value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} />
-            </div>
-            <div className="grid gap-2 md:grid-cols-2 md:gap-3">
-              <div className="grid gap-2">
-                <Label>{t("locationsType")}</Label>
-                <Select value={form.kind} onValueChange={(value) => setForm((prev) => ({ ...prev, kind: value as LocationKind }))}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {kindOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {t(kindLabelKeys[option.value])}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="grid gap-2">
-                  <Label>{t("locationsFloor")}</Label>
-                  <Input
-                    value={form.floorNumber}
-                    onChange={(event) => setForm((prev) => ({ ...prev, floorNumber: event.target.value }))}
-                    placeholder={t("locationsFloorPlaceholder")}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label>{t("locationsRoom")}</Label>
-                  <Input
-                    value={form.roomNumber}
-                    onChange={(event) => setForm((prev) => ({ ...prev, roomNumber: event.target.value }))}
-                    placeholder={t("locationsRoomPlaceholder")}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="grid gap-2">
-              <Label>{t("locationsAddress")}</Label>
-              <SearchableSelect
-                value={form.addressId}
-                onValueChange={(value) => setForm((prev) => ({ ...prev, addressId: value }))}
-                items={[
-                  { value: "none", label: t("locationsNoLinkedAddress") },
-                  ...addresses.map((entry) => ({
-                    value: entry.id,
-                    label: entry.label,
-                    description: entry.fullAddress,
-                  })),
-                ]}
-                placeholder={t("locationsSelectAddress")}
-                searchPlaceholder={t("locationsSearch")}
-                emptyLabel={t("locationsNoMatches")}
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label>{t("locationsParent")}</Label>
-              <SearchableSelect
-                value={form.parentId}
-                onValueChange={(value) => setForm((prev) => ({ ...prev, parentId: value }))}
-                items={[
-                  { value: "none", label: t("locationsNoParent") },
-                  ...allowedParentOptions.map((location) => ({
-                    value: location.id,
-                    label: location.name,
-                    description: location.path,
-                  })),
-                ]}
-                placeholder={t("locationsParent")}
-                searchPlaceholder={t("locationsSearch")}
-                emptyLabel={t("locationsNoMatches")}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              {t("commonCancel")}
-            </Button>
-            <Button onClick={saveLocation} disabled={saving || form.name.length < 2}>
-              {saving ? t("settingsSaving") : dialogMode === "create" ? t("locationsCreateTitle") : t("settingsSaveChanges")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={addressDialogOpen}
-        onOpenChange={(next) => {
-          setAddressDialogOpen(next)
-          if (!next) {
-            setAddressDialogMode("create")
-            setEditingAddressId(null)
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{addressDialogMode === "create" ? t("locationsCreateAddress") : t("locationsEditAddress")}</DialogTitle>
-            <DialogDescription>{t("locationsAddressBookDescription")}</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <div className="grid gap-2">
-              <Label>{t("locationsLabel")}</Label>
-              <Input value={addressForm.label} onChange={(event) => setAddressForm((prev) => ({ ...prev, label: event.target.value }))} placeholder={t("locationsLabelPlaceholder")} />
-            </div>
-            <div className="grid gap-2">
-              <Label>{t("locationsAddressLine1")}</Label>
-              <Input value={addressForm.addressLine1} onChange={(event) => setAddressForm((prev) => ({ ...prev, addressLine1: event.target.value }))} placeholder={t("locationsAddressLine1Placeholder")} />
-            </div>
-            <div className="grid gap-2">
-              <Label>{t("locationsAddressLine2")}</Label>
-              <Input value={addressForm.addressLine2} onChange={(event) => setAddressForm((prev) => ({ ...prev, addressLine2: event.target.value }))} placeholder={t("locationsAddressLine2Placeholder")} />
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="grid gap-2">
-                <Label>{t("locationsZip")}</Label>
-                <Input value={addressForm.postalCode} onChange={(event) => setAddressForm((prev) => ({ ...prev, postalCode: event.target.value }))} placeholder={t("locationsZipPlaceholder")} />
-              </div>
-              <div className="col-span-2 grid gap-2">
-                <Label>{t("locationsCity")}</Label>
-                <Input value={addressForm.city} onChange={(event) => setAddressForm((prev) => ({ ...prev, city: event.target.value }))} placeholder={t("locationsCityPlaceholder")} />
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label>{t("locationsCountry")}</Label>
-              <Input value={addressForm.country} onChange={(event) => setAddressForm((prev) => ({ ...prev, country: event.target.value }))} placeholder={t("locationsCountryPlaceholder")} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddressDialogOpen(false)}>{t("commonCancel")}</Button>
-            <Button
-              onClick={saveAddress}
-              disabled={
-                addressSaving ||
-                addressForm.label.trim().length < 2 ||
-                addressForm.addressLine1.trim().length < 2 ||
-                addressForm.postalCode.trim().length < 2 ||
-                addressForm.city.trim().length < 2 ||
-                addressForm.country.trim().length < 2
+        <>
+          <Dialog
+            open={open}
+            onOpenChange={(next) => {
+              setOpen(next)
+              if (!next) {
+                setDialogMode("create")
+                setEditingLocationId(null)
+                setDialogParent(null)
               }
-            >
-              {addressSaving ? t("settingsSaving") : addressDialogMode === "create" ? t("locationsCreateAddress") : t("locationsSaveAddress")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      </>
+            }}
+          >
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>
+                  {dialogMode === "create" ? t("locationsCreateTitle") : t("locationsEditTitle")}
+                </DialogTitle>
+                <DialogDescription className="break-words">
+                  {dialogMode === "create"
+                    ? dialogParent
+                      ? t("locationsCreateChildUnder", { path: dialogParent.path })
+                      : t("locationsCreateRootDescription")
+                    : t("locationsEditDescription")}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-3">
+                <div className="grid gap-2">
+                  <Label>{t("commonName")}</Label>
+                  <Input
+                    value={form.name}
+                    onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+                  />
+                </div>
+                <div className="grid gap-2 md:grid-cols-2 md:gap-3">
+                  <div className="grid gap-2">
+                    <Label>{t("locationsType")}</Label>
+                    <Select
+                      value={form.kind}
+                      onValueChange={(value) => setForm((prev) => ({ ...prev, kind: value as LocationKind }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {kindOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {t(kindLabelKeys[option.value])}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="grid gap-2">
+                      <Label>{t("locationsFloor")}</Label>
+                      <Input
+                        value={form.floorNumber}
+                        onChange={(event) => setForm((prev) => ({ ...prev, floorNumber: event.target.value }))}
+                        placeholder={t("locationsFloorPlaceholder")}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>{t("locationsRoom")}</Label>
+                      <Input
+                        value={form.roomNumber}
+                        onChange={(event) => setForm((prev) => ({ ...prev, roomNumber: event.target.value }))}
+                        placeholder={t("locationsRoomPlaceholder")}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label>{t("locationsAddress")}</Label>
+                  <SearchableSelect
+                    value={form.addressId}
+                    onValueChange={(value) => setForm((prev) => ({ ...prev, addressId: value }))}
+                    items={[
+                      { value: "none", label: t("locationsNoLinkedAddress") },
+                      ...addresses.map((entry) => ({
+                        value: entry.id,
+                        label: entry.label,
+                        description: entry.fullAddress,
+                      })),
+                    ]}
+                    placeholder={t("locationsSelectAddress")}
+                    searchPlaceholder={t("locationsSearch")}
+                    emptyLabel={t("locationsNoMatches")}
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label>{t("locationsParent")}</Label>
+                  <SearchableSelect
+                    value={form.parentId}
+                    onValueChange={(value) => setForm((prev) => ({ ...prev, parentId: value }))}
+                    items={[
+                      { value: "none", label: t("locationsNoParent") },
+                      ...allowedParentOptions.map((location) => ({
+                        value: location.id,
+                        label: location.name,
+                        description: location.path,
+                      })),
+                    ]}
+                    placeholder={t("locationsParent")}
+                    searchPlaceholder={t("locationsSearch")}
+                    emptyLabel={t("locationsNoMatches")}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setOpen(false)}>
+                  {t("commonCancel")}
+                </Button>
+                <Button onClick={saveLocation} disabled={saving || form.name.length < 2}>
+                  {saving
+                    ? t("settingsSaving")
+                    : dialogMode === "create"
+                      ? t("locationsCreateTitle")
+                      : t("settingsSaveChanges")}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog
+            open={addressDialogOpen}
+            onOpenChange={(next) => {
+              setAddressDialogOpen(next)
+              if (!next) {
+                setAddressDialogMode("create")
+                setEditingAddressId(null)
+              }
+            }}
+          >
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>
+                  {addressDialogMode === "create" ? t("locationsCreateAddress") : t("locationsEditAddress")}
+                </DialogTitle>
+                <DialogDescription>{t("locationsAddressBookDescription")}</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-3">
+                <div className="grid gap-2">
+                  <Label>{t("locationsLabel")}</Label>
+                  <Input
+                    value={addressForm.label}
+                    onChange={(event) => setAddressForm((prev) => ({ ...prev, label: event.target.value }))}
+                    placeholder={t("locationsLabelPlaceholder")}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>{t("locationsAddressLine1")}</Label>
+                  <Input
+                    value={addressForm.addressLine1}
+                    onChange={(event) => setAddressForm((prev) => ({ ...prev, addressLine1: event.target.value }))}
+                    placeholder={t("locationsAddressLine1Placeholder")}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>{t("locationsAddressLine2")}</Label>
+                  <Input
+                    value={addressForm.addressLine2}
+                    onChange={(event) => setAddressForm((prev) => ({ ...prev, addressLine2: event.target.value }))}
+                    placeholder={t("locationsAddressLine2Placeholder")}
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="grid gap-2">
+                    <Label>{t("locationsZip")}</Label>
+                    <Input
+                      value={addressForm.postalCode}
+                      onChange={(event) => setAddressForm((prev) => ({ ...prev, postalCode: event.target.value }))}
+                      placeholder={t("locationsZipPlaceholder")}
+                    />
+                  </div>
+                  <div className="col-span-2 grid gap-2">
+                    <Label>{t("locationsCity")}</Label>
+                    <Input
+                      value={addressForm.city}
+                      onChange={(event) => setAddressForm((prev) => ({ ...prev, city: event.target.value }))}
+                      placeholder={t("locationsCityPlaceholder")}
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label>{t("locationsCountry")}</Label>
+                  <Input
+                    value={addressForm.country}
+                    onChange={(event) => setAddressForm((prev) => ({ ...prev, country: event.target.value }))}
+                    placeholder={t("locationsCountryPlaceholder")}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setAddressDialogOpen(false)}>
+                  {t("commonCancel")}
+                </Button>
+                <Button
+                  onClick={saveAddress}
+                  disabled={
+                    addressSaving ||
+                    addressForm.label.trim().length < 2 ||
+                    addressForm.addressLine1.trim().length < 2 ||
+                    addressForm.postalCode.trim().length < 2 ||
+                    addressForm.city.trim().length < 2 ||
+                    addressForm.country.trim().length < 2
+                  }
+                >
+                  {addressSaving
+                    ? t("settingsSaving")
+                    : addressDialogMode === "create"
+                      ? t("locationsCreateAddress")
+                      : t("locationsSaveAddress")}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </>
       ) : null}
     </AppShell>
   )

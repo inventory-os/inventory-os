@@ -4,6 +4,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { AppRuntimeProvider, useAppRuntime } from "@/components/app-runtime-provider"
 
+const mockUseSetupStatusQuery = vi.fn()
+
+vi.mock("@/lib/trpc/react", () => ({
+  trpc: {
+    setup: {
+      status: {
+        useQuery: (...args: unknown[]) => mockUseSetupStatusQuery(...args),
+      },
+    },
+  },
+}))
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
 }))
@@ -41,21 +53,26 @@ describe("AppRuntimeProvider", () => {
     })
 
     localStorage.clear()
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          setup: {
-            setupComplete: true,
-            appName: "Inventory OS",
-            organizationName: "Org",
-            locale: "en",
-            currency: "EUR",
-          },
-        }),
+    mockUseSetupStatusQuery.mockReset()
+    mockUseSetupStatusQuery.mockReturnValue({
+      data: {
+        setupComplete: true,
+        appName: "Inventory OS",
+        organizationName: "Org",
+        locale: "en",
+        currency: "EUR",
+      },
+      isLoading: false,
+      refetch: vi.fn().mockResolvedValue({
+        data: {
+          setupComplete: true,
+          appName: "Inventory OS",
+          organizationName: "Org",
+          locale: "en",
+          currency: "EUR",
+        },
       }),
-    )
+    })
   })
 
   it("auto-detects browser locale and updates loading state", async () => {
@@ -69,6 +86,8 @@ describe("AppRuntimeProvider", () => {
         <RuntimeProbe />
       </AppRuntimeProvider>,
     )
+
+    expect(mockUseSetupStatusQuery).toHaveBeenCalledWith(undefined, { staleTime: 60_000 })
 
     await waitFor(() => expect(screen.getByTestId("locale").textContent).toBe("de"))
     await waitFor(() => expect(screen.getByTestId("loading").textContent).toBe("ready"))

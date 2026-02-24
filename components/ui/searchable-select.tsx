@@ -68,7 +68,9 @@ export function SearchableSelect({
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm">{item.label}</p>
-                    {item.description ? <p className="truncate text-[11px] text-muted-foreground">{item.description}</p> : null}
+                    {item.description ? (
+                      <p className="truncate text-[11px] text-muted-foreground">{item.description}</p>
+                    ) : null}
                   </div>
                   <Check className={cn("ml-2 size-4", value === item.value ? "opacity-100" : "opacity-0")} />
                 </CommandItem>

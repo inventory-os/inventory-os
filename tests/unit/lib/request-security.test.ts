@@ -4,11 +4,11 @@ const { getEffectiveSecuritySettings } = vi.hoisted(() => ({
   getEffectiveSecuritySettings: vi.fn(),
 }))
 
-vi.mock("@/lib/core-repository", () => ({
+vi.mock("@/lib/services", () => ({
   getEffectiveSecuritySettings,
 }))
 
-import { ensureTrustedNetwork } from "@/lib/request-security"
+import { ensureTrustedNetwork } from "@/lib/services/request-security.service"
 
 describe("request-security logic", () => {
   beforeEach(() => {

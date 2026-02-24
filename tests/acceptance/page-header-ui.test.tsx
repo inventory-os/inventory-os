@@ -31,7 +31,7 @@ describe("auth + header-path acceptance (real runtime)", () => {
 
     const discoveryResponse = await fetch(`${issuer}/.well-known/openid-configuration`)
     expect(discoveryResponse.status).toBe(200)
-    const discovery = await discoveryResponse.json() as { authorization_endpoint: string; token_endpoint: string }
+    const discovery = (await discoveryResponse.json()) as { authorization_endpoint: string; token_endpoint: string }
     expect(typeof discovery.authorization_endpoint).toBe("string")
     expect(typeof discovery.token_endpoint).toBe("string")
   })

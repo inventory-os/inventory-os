@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from "next/server"
-import { bindOrCreateAuthUserFromOidc, notifyAuthIntegrationFailed, upsertMemberByEmail } from "@/lib/core-repository"
-import { createSessionToken } from "@/lib/auth-session"
-import { SESSION_COOKIE_NAME } from "@/lib/auth-constants"
-import { decodeOidcIdTokenClaims, discoverOidcMetadata, exchangeCodeForTokens, fetchUserInfo, getOidcConfig, resolveOidcAppRole } from "@/lib/oidc"
-import { toPublicErrorMessage } from "@/lib/api-error"
-import { ensureTrustedNetwork } from "@/lib/request-security"
+import { bindOrCreateAuthUserFromOidc, notifyAuthIntegrationFailed, upsertMemberByEmail } from "@/lib/services"
+import { createSessionToken } from "@/lib/services/auth-session.service"
+import { SESSION_COOKIE_NAME } from "@/lib/utils/auth-constants"
+import {
+  decodeOidcIdTokenClaims,
+  discoverOidcMetadata,
+  exchangeCodeForTokens,
+  fetchUserInfo,
+  getOidcConfig,
+  resolveOidcAppRole,
+} from "@/lib/utils/oidc"
+import { toPublicErrorMessage } from "@/lib/utils/api-error"
+import { ensureTrustedNetwork } from "@/lib/services/request-security.service"
 
 function normalizeReturnTo(value: string): string {
   if (!value.startsWith("/")) {
@@ -56,10 +63,7 @@ export async function GET(request: NextRequest) {
       (typeof profile.preferred_username === "string" ? profile.preferred_username : undefined) ??
       idTokenClaims.email ??
       idTokenClaims.preferred_username
-    const displayName =
-      (typeof profile.name === "string" ? profile.name : undefined) ??
-      idTokenClaims.name ??
-      email
+    const displayName = (typeof profile.name === "string" ? profile.name : undefined) ?? idTokenClaims.name ?? email
     const appRole = resolveOidcAppRole(profile, idTokenClaims)
 
     if (!sub) {
@@ -80,7 +84,10 @@ export async function GET(request: NextRequest) {
     })
 
     if (!user) {
-      return NextResponse.json({ error: "User not provisioned. Ask admin to create or sync the user account." }, { status: 403 })
+      return NextResponse.json(
+        { error: "User not provisioned. Ask admin to create or sync the user account." },
+        { status: 403 },
+      )
     }
 
     if (!user.active) {
@@ -119,9 +126,6 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     const publicMessage = toPublicErrorMessage(error, "OIDC callback failed")
     await notifyAuthIntegrationFailed(publicMessage)
-    return NextResponse.json(
-      { error: publicMessage },
-      { status: 500 },
-    )
+    return NextResponse.json({ error: publicMessage }, { status: 500 })
   }
 }

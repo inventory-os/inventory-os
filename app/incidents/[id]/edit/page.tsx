@@ -15,7 +15,8 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { SearchableSelect } from "@/components/ui/searchable-select"
-import type { Asset, IncidentRecord, IncidentSeverity, IncidentStatus, IncidentType } from "@/lib/data"
+import type { Asset, IncidentRecord, IncidentSeverity, IncidentStatus, IncidentType } from "@/lib/types"
+import { trpc } from "@/lib/trpc/react"
 
 const incidentSeverityOptions: IncidentSeverity[] = ["low", "medium", "high", "critical"]
 const incidentStatusOptions: IncidentStatus[] = ["open", "investigating", "resolved"]
@@ -64,19 +65,26 @@ export default function IncidentEditPage({ params }: { params: Promise<{ id: str
   const [estimatedRepairCost, setEstimatedRepairCost] = useState("")
   const [resolutionNotes, setResolutionNotes] = useState("")
 
-  const loadIncident = async () => {
-    setLoading(true)
+  const incidentQuery = trpc.incidents.byId.useQuery(
+    { id },
+    {
+      enabled: !userLoading && isAdmin,
+      staleTime: 10_000,
+    },
+  )
 
-    const [incidentResponse, assetsResponse] = await Promise.all([
-      fetch(`/api/incidents/${id}`, { cache: "no-store" }),
-      fetch("/api/assets?page=1&pageSize=200", { cache: "no-store" }),
-    ])
+  const assetsQuery = trpc.assets.list.useQuery(undefined, {
+    enabled: !userLoading && isAdmin,
+    staleTime: 30_000,
+  })
 
-    if (incidentResponse.ok) {
-      const payload = (await incidentResponse.json()) as { incident: IncidentRecord }
-      const loadedIncident = payload.incident
-      setIncident(loadedIncident)
+  const updateIncidentMutation = trpc.incidents.update.useMutation()
 
+  useEffect(() => {
+    const loadedIncident = (incidentQuery.data as IncidentRecord | null | undefined) ?? null
+    setIncident(loadedIncident)
+
+    if (loadedIncident) {
       setAssetId(loadedIncident.assetId)
       setIncidentType(loadedIncident.incidentType)
       setTitle(loadedIncident.title)
@@ -84,29 +92,18 @@ export default function IncidentEditPage({ params }: { params: Promise<{ id: str
       setSeverity(loadedIncident.severity)
       setStatus(loadedIncident.status)
       setOccurredAt(loadedIncident.occurredAt ? loadedIncident.occurredAt.slice(0, 10) : "")
-      setEstimatedRepairCost(loadedIncident.estimatedRepairCost === null ? "" : String(loadedIncident.estimatedRepairCost))
+      setEstimatedRepairCost(
+        loadedIncident.estimatedRepairCost === null ? "" : String(loadedIncident.estimatedRepairCost),
+      )
       setResolutionNotes(loadedIncident.resolutionNotes ?? "")
-    } else {
-      setIncident(null)
     }
 
-    if (assetsResponse.ok) {
-      const payload = (await assetsResponse.json()) as { assets: Asset[] }
-      setAssets(payload.assets ?? [])
-    } else {
-      setAssets([])
-    }
-
-    setLoading(false)
-  }
+    setLoading(incidentQuery.isLoading || incidentQuery.isFetching)
+  }, [incidentQuery.data, incidentQuery.isLoading, incidentQuery.isFetching])
 
   useEffect(() => {
-    if (userLoading || !isAdmin) {
-      return
-    }
-
-    void loadIncident()
-  }, [id, isAdmin, userLoading])
+    setAssets((assetsQuery.data ?? []) as Asset[])
+  }, [assetsQuery.data])
 
   const saveIncident = async () => {
     if (!incident) {
@@ -115,21 +112,25 @@ export default function IncidentEditPage({ params }: { params: Promise<{ id: str
 
     setSaving(true)
 
-    const response = await fetch(`/api/incidents/${incident.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        assetId,
-        incidentType,
-        title,
-        description,
-        severity,
-        status,
-        occurredAt: occurredAt || null,
-        estimatedRepairCost: estimatedRepairCost.trim().length > 0 ? Number(estimatedRepairCost) : null,
-        resolutionNotes: resolutionNotes || null,
-      }),
-    })
+    const response = await updateIncidentMutation
+      .mutateAsync({
+        id: incident.id,
+        input: {
+          assetId,
+          incidentType,
+          title,
+          description,
+          severity,
+          status,
+          occurredAt: occurredAt || null,
+          estimatedRepairCost: estimatedRepairCost.trim().length > 0 ? Number(estimatedRepairCost) : null,
+          resolutionNotes: resolutionNotes || null,
+        },
+      })
+      .then(
+        () => ({ ok: true }),
+        () => ({ ok: false }),
+      )
 
     setSaving(false)
     if (!response.ok) {
@@ -140,7 +141,11 @@ export default function IncidentEditPage({ params }: { params: Promise<{ id: str
   }
 
   if (userLoading || loading) {
-    return <AppShell><PageHeader title={t("commonEdit")} breadcrumbs={[{ label: t("navIncidents") }]} /></AppShell>
+    return (
+      <AppShell>
+        <PageHeader title={t("commonEdit")} breadcrumbs={[{ label: t("navIncidents") }]} />
+      </AppShell>
+    )
   }
 
   if (!isAdmin) {
@@ -171,7 +176,14 @@ export default function IncidentEditPage({ params }: { params: Promise<{ id: str
 
   return (
     <AppShell>
-      <PageHeader title={incident.title} breadcrumbs={[{ label: t("navIncidents"), href: "/incidents" }, { label: incident.id, href: `/incidents/${incident.id}` }, { label: t("commonEdit") }]} />
+      <PageHeader
+        title={incident.title}
+        breadcrumbs={[
+          { label: t("navIncidents"), href: "/incidents" },
+          { label: incident.id, href: `/incidents/${incident.id}` },
+          { label: t("commonEdit") },
+        ]}
+      />
       <div className="app-page">
         <Button variant="ghost" size="sm" asChild className="-ml-2 w-fit">
           <Link href={`/incidents/${incident.id}`}>
@@ -202,10 +214,14 @@ export default function IncidentEditPage({ params }: { params: Promise<{ id: str
                 <div className="grid gap-2">
                   <Label>{t("incidentsFieldType")}</Label>
                   <Select value={incidentType} onValueChange={(value) => setIncidentType(value as IncidentType)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
                     <SelectContent>
                       {incidentTypeOptions.map((value) => (
-                        <SelectItem key={value} value={value}>{incidentTypeLabel(t, value)}</SelectItem>
+                        <SelectItem key={value} value={value}>
+                          {incidentTypeLabel(t, value)}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -216,10 +232,14 @@ export default function IncidentEditPage({ params }: { params: Promise<{ id: str
                 <div className="grid gap-2">
                   <Label>{t("incidentsFieldSeverity")}</Label>
                   <Select value={severity} onValueChange={(value) => setSeverity(value as IncidentSeverity)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
                     <SelectContent>
                       {incidentSeverityOptions.map((value) => (
-                        <SelectItem key={value} value={value}>{incidentSeverityLabel(t, value)}</SelectItem>
+                        <SelectItem key={value} value={value}>
+                          {incidentSeverityLabel(t, value)}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -227,10 +247,14 @@ export default function IncidentEditPage({ params }: { params: Promise<{ id: str
                 <div className="grid gap-2">
                   <Label>{t("incidentsStatus")}</Label>
                   <Select value={status} onValueChange={(value) => setStatus(value as IncidentStatus)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
                     <SelectContent>
                       {incidentStatusOptions.map((value) => (
-                        <SelectItem key={value} value={value}>{incidentStatusLabel(t, value)}</SelectItem>
+                        <SelectItem key={value} value={value}>
+                          {incidentStatusLabel(t, value)}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -244,7 +268,11 @@ export default function IncidentEditPage({ params }: { params: Promise<{ id: str
 
               <div className="grid gap-2">
                 <Label>{t("incidentsFieldDescription")}</Label>
-                <Textarea value={description} onChange={(event) => setDescription(event.target.value)} className="min-h-24" />
+                <Textarea
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  className="min-h-24"
+                />
               </div>
             </CardContent>
           </Card>
@@ -260,11 +288,21 @@ export default function IncidentEditPage({ params }: { params: Promise<{ id: str
               </div>
               <div className="grid gap-2">
                 <Label>{t("incidentsEstimatedRepairCost")}</Label>
-                <Input type="number" min={0} step="0.01" value={estimatedRepairCost} onChange={(event) => setEstimatedRepairCost(event.target.value)} />
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={estimatedRepairCost}
+                  onChange={(event) => setEstimatedRepairCost(event.target.value)}
+                />
               </div>
               <div className="grid gap-2 sm:col-span-2">
                 <Label>{t("incidentsResolutionNotes")}</Label>
-                <Textarea value={resolutionNotes} onChange={(event) => setResolutionNotes(event.target.value)} className="min-h-24" />
+                <Textarea
+                  value={resolutionNotes}
+                  onChange={(event) => setResolutionNotes(event.target.value)}
+                  className="min-h-24"
+                />
               </div>
             </CardContent>
           </Card>
@@ -273,7 +311,10 @@ export default function IncidentEditPage({ params }: { params: Promise<{ id: str
             <Button variant="outline" asChild>
               <Link href={`/incidents/${incident.id}`}>{t("commonCancel")}</Link>
             </Button>
-            <Button onClick={saveIncident} disabled={saving || !assetId || title.trim().length < 3 || description.trim().length < 5}>
+            <Button
+              onClick={saveIncident}
+              disabled={saving || !assetId || title.trim().length < 3 || description.trim().length < 5}
+            >
               {saving ? t("settingsSaving") : t("settingsSaveChanges")}
             </Button>
           </div>

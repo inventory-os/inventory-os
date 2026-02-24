@@ -1,11 +1,11 @@
 "use client"
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
-import { useRouter } from "next/navigation"
-import { EUROPEAN_LOCALES } from "@/lib/i18n"
-import { translate, type I18nKey, type TranslationParams } from "@/lib/i18n"
-import type { EuropeanLocale, SetupStatus } from "@/lib/data"
-import { formatCurrencyValue, formatDateValue, normalizeCurrency } from "@/lib/intl"
+import { EUROPEAN_LOCALES } from "@/lib/utils/i18n"
+import { translate, type I18nKey, type TranslationParams } from "@/lib/utils/i18n"
+import type { EuropeanLocale, SetupStatus } from "@/lib/types"
+import { formatCurrencyValue, formatDateValue, normalizeCurrency } from "@/lib/utils/intl"
+import { trpc } from "@/lib/trpc/react"
 
 type RuntimeContextValue = {
   config: SetupStatus
@@ -59,26 +59,27 @@ function detectBrowserLocale(): EuropeanLocale {
 }
 
 export function AppRuntimeProvider({ children }: { children: React.ReactNode }) {
-  const router = useRouter()
-  const [loading, setLoading] = useState(true)
   const [config, setConfig] = useState<SetupStatus>(defaultConfig)
   const [localeOverride, setLocaleOverride] = useState<EuropeanLocale | null>(null)
 
-  const refresh = useCallback(async () => {
-    const response = await fetch("/api/setup/status", { cache: "no-store" })
-    if (!response.ok) {
-      setLoading(false)
-      return
-    }
+  const setupStatusQuery = trpc.setup.status.useQuery(undefined, {
+    staleTime: 60_000,
+  })
 
-    const payload = await response.json()
-    setConfig(payload.setup)
-    setLoading(false)
-  }, [])
+  const loading = setupStatusQuery.isLoading
 
   useEffect(() => {
-    refresh()
-  }, [refresh])
+    if (setupStatusQuery.data) {
+      setConfig(setupStatusQuery.data)
+    }
+  }, [setupStatusQuery.data])
+
+  const refresh = useCallback(async () => {
+    const payload = await setupStatusQuery.refetch()
+    if (payload.data) {
+      setConfig(payload.data)
+    }
+  }, [setupStatusQuery])
 
   useEffect(() => {
     if (typeof window === "undefined") {

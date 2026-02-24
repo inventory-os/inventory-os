@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { use, useEffect, useMemo, useState } from "react"
+import { use, useMemo } from "react"
 import { AppShell } from "@/components/app-shell"
 import { PageHeader } from "@/components/page-header"
 import { StatusBadge } from "@/components/status-badge"
@@ -9,16 +9,10 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { type AssetCategory, type AssetStatus, type LoanRecord, type TeamMember } from "@/lib/data"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { type AssetCategory, type AssetStatus, type LoanRecord, type TeamMember } from "@/lib/types"
 import { useAppRuntime } from "@/components/app-runtime-provider"
+import { trpc } from "@/lib/trpc/react"
 
 type AssignedMemberAsset = {
   id: string
@@ -42,7 +36,11 @@ type ActivityEntry = {
   assetName: string
 }
 
-function formatDateTime(value: string | null, formatter: (value: string | number | Date, options?: Intl.DateTimeFormatOptions) => string, fallback: string): string {
+function formatDateTime(
+  value: string | null,
+  formatter: (value: string | number | Date, options?: Intl.DateTimeFormatOptions) => string,
+  fallback: string,
+): string {
   if (!value) {
     return fallback
   }
@@ -50,33 +48,17 @@ function formatDateTime(value: string | null, formatter: (value: string | number
   return formatter(value)
 }
 
-export default function TeamMemberDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>
-}) {
+export default function TeamMemberDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { t, formatDate } = useAppRuntime()
   const { id } = use(params)
-  const [profile, setProfile] = useState<MemberProfilePayload | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-
-  const loadProfile = async () => {
-    setIsLoading(true)
-    const response = await fetch(`/api/members/${id}`, { cache: "no-store" })
-
-    if (response.ok) {
-      const payload = (await response.json()) as MemberProfilePayload
-      setProfile(payload)
-    } else {
-      setProfile(null)
-    }
-
-    setIsLoading(false)
-  }
-
-  useEffect(() => {
-    loadProfile()
-  }, [id])
+  const profileQuery = trpc.members.profileById.useQuery(
+    { id },
+    {
+      staleTime: 30_000,
+    },
+  )
+  const profile = (profileQuery.data as MemberProfilePayload | null | undefined) ?? null
+  const isLoading = profileQuery.isLoading
 
   const activity = useMemo(() => {
     if (!profile) {
@@ -113,8 +95,13 @@ export default function TeamMemberDetailPage({
   if (isLoading) {
     return (
       <AppShell>
-        <PageHeader title={t("teamLoadingTitle")} breadcrumbs={[{ label: t("navTeam"), href: "/team" }, { label: t("commonLoading") }]} />
-        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">{t("teamLoadingDetails")}</div>
+        <PageHeader
+          title={t("teamLoadingTitle")}
+          breadcrumbs={[{ label: t("navTeam"), href: "/team" }, { label: t("commonLoading") }]}
+        />
+        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+          {t("teamLoadingDetails")}
+        </div>
       </AppShell>
     )
   }
@@ -122,7 +109,10 @@ export default function TeamMemberDetailPage({
   if (!profile) {
     return (
       <AppShell>
-        <PageHeader title={t("teamMemberNotFoundTitle")} breadcrumbs={[{ label: t("navTeam"), href: "/team" }, { label: t("commonNotFound") }]} />
+        <PageHeader
+          title={t("teamMemberNotFoundTitle")}
+          breadcrumbs={[{ label: t("navTeam"), href: "/team" }, { label: t("commonNotFound") }]}
+        />
         <div className="flex flex-1 items-center justify-center">
           <div className="text-center">
             <h2 className="text-lg font-semibold">{t("teamMemberNotFoundTitle")}</h2>
@@ -145,17 +135,16 @@ export default function TeamMemberDetailPage({
     <AppShell>
       <PageHeader
         title={profile.member.name}
-        breadcrumbs={[
-          { label: t("navTeam"), href: "/team" },
-          { label: profile.member.name },
-        ]}
+        breadcrumbs={[{ label: t("navTeam"), href: "/team" }, { label: profile.member.name }]}
       />
 
       <div className="app-page">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Avatar className="size-10">
-              <AvatarFallback className="bg-primary/10 text-primary font-medium">{profile.member.avatar}</AvatarFallback>
+              <AvatarFallback className="bg-primary/10 text-primary font-medium">
+                {profile.member.avatar}
+              </AvatarFallback>
             </Avatar>
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">{profile.member.name}</h1>
@@ -247,7 +236,9 @@ export default function TeamMemberDetailPage({
                 ) : (
                   activity.map((entry) => (
                     <TableRow key={entry.id} className="hover:bg-muted/30">
-                      <TableCell className="text-xs text-muted-foreground">{formatDateTime(entry.at, formatDate, "—")}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {formatDateTime(entry.at, formatDate, "—")}
+                      </TableCell>
                       <TableCell>
                         <Badge variant={entry.type === "assigned" ? "secondary" : "outline"} className="text-[10px]">
                           {entry.type === "assigned" ? t("teamAssigned") : t("teamUnassigned")}

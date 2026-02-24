@@ -9,3 +9,4 @@ shelf.sqlite
 storage
 coverage
 public
+pnpm-lock.yaml

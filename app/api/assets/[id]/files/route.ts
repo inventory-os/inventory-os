@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
-import { createAssetFileRecord, getAssetById, listAssetFiles } from "@/lib/core-repository"
-import type { AssetFileKind } from "@/lib/data"
-import { storeAssetFile } from "@/lib/asset-storage"
+import { createAssetFileRecord, getAssetById, listAssetFiles } from "@/lib/services"
+import type { AssetFileKind } from "@/lib/types"
+import { storeAssetFile } from "@/lib/services/asset-storage.service"
 
 const uploadKindSchema = z.custom<AssetFileKind>((value) => {
   return value === undefined || value === "image" || value === "document"

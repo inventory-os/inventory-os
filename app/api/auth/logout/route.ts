@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { SESSION_COOKIE_NAME } from "@/lib/auth-constants"
-import { ensureTrustedNetwork } from "@/lib/request-security"
+import { SESSION_COOKIE_NAME } from "@/lib/utils/auth-constants"
+import { ensureTrustedNetwork } from "@/lib/services/request-security.service"
 
 export async function POST(request: NextRequest) {
   const blocked = await ensureTrustedNetwork(request)

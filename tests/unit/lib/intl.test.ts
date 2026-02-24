@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { formatCurrencyValue, formatDateValue, localeTag, normalizeCurrency } from "@/lib/intl"
+import { formatCurrencyValue, formatDateValue, localeTag, normalizeCurrency } from "@/lib/utils/intl"
 
 describe("intl helpers", () => {
   it("normalizes valid and invalid currency codes", () => {

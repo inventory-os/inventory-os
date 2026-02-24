@@ -16,12 +16,19 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { SearchableSelect } from "@/components/ui/searchable-select"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useAppRuntime } from "@/components/app-runtime-provider"
 import { useCurrentUser } from "@/hooks/use-current-user"
-import type { Asset, IncidentRecord, IncidentSeverity, IncidentStatus, IncidentType } from "@/lib/data"
+import type { Asset, IncidentRecord, IncidentSeverity, IncidentStatus, IncidentType } from "@/lib/types"
 
 const incidentStatusOptions: IncidentStatus[] = ["open", "investigating", "resolved"]
 const incidentSeverityOptions: IncidentSeverity[] = ["low", "medium", "high", "critical"]
@@ -212,11 +219,15 @@ export default function IncidentsPage() {
   }
 
   const pendingDeleteIncident = pendingDeleteIncidentId
-    ? incidents.find((entry) => entry.id === pendingDeleteIncidentId) ?? null
+    ? (incidents.find((entry) => entry.id === pendingDeleteIncidentId) ?? null)
     : null
 
   if (userLoading) {
-    return <AppShell><PageHeader title={t("navIncidents")} breadcrumbs={[{ label: t("navIncidents") }]} /></AppShell>
+    return (
+      <AppShell>
+        <PageHeader title={t("navIncidents")} breadcrumbs={[{ label: t("navIncidents") }]} />
+      </AppShell>
+    )
   }
 
   if (!isAdmin) {
@@ -248,10 +259,30 @@ export default function IncidentsPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Card className="app-kpi"><CardContent className="p-4"><p className="text-[11px] text-muted-foreground">{t("incidentsStatusOpen")}</p><p className="text-2xl font-semibold">{groupedCounts.open}</p></CardContent></Card>
-          <Card className="app-kpi"><CardContent className="p-4"><p className="text-[11px] text-muted-foreground">{t("incidentsStatusInvestigating")}</p><p className="text-2xl font-semibold">{groupedCounts.investigating}</p></CardContent></Card>
-          <Card className="app-kpi"><CardContent className="p-4"><p className="text-[11px] text-muted-foreground">{t("incidentsStatusResolved")}</p><p className="text-2xl font-semibold">{groupedCounts.resolved}</p></CardContent></Card>
-          <Card className="app-kpi"><CardContent className="p-4"><p className="text-[11px] text-muted-foreground">{t("incidentsSeverityCritical")}</p><p className="text-2xl font-semibold">{groupedCounts.critical}</p></CardContent></Card>
+          <Card className="app-kpi">
+            <CardContent className="p-4">
+              <p className="text-[11px] text-muted-foreground">{t("incidentsStatusOpen")}</p>
+              <p className="text-2xl font-semibold">{groupedCounts.open}</p>
+            </CardContent>
+          </Card>
+          <Card className="app-kpi">
+            <CardContent className="p-4">
+              <p className="text-[11px] text-muted-foreground">{t("incidentsStatusInvestigating")}</p>
+              <p className="text-2xl font-semibold">{groupedCounts.investigating}</p>
+            </CardContent>
+          </Card>
+          <Card className="app-kpi">
+            <CardContent className="p-4">
+              <p className="text-[11px] text-muted-foreground">{t("incidentsStatusResolved")}</p>
+              <p className="text-2xl font-semibold">{groupedCounts.resolved}</p>
+            </CardContent>
+          </Card>
+          <Card className="app-kpi">
+            <CardContent className="p-4">
+              <p className="text-[11px] text-muted-foreground">{t("incidentsSeverityCritical")}</p>
+              <p className="text-2xl font-semibold">{groupedCounts.critical}</p>
+            </CardContent>
+          </Card>
         </div>
 
         <Card className="app-surface">
@@ -259,7 +290,11 @@ export default function IncidentsPage() {
             <CardTitle className="text-sm font-medium">{t("incidentsTitle")}</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("incidentsSearch")} />
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder={t("incidentsSearch")}
+            />
             <SearchableSelect
               value={assetFilter}
               onValueChange={setAssetFilter}
@@ -272,24 +307,41 @@ export default function IncidentsPage() {
               emptyLabel={t("incidentsNoMatches")}
             />
             <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as "all" | IncidentStatus)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{t("filtersAllStatus")}</SelectItem>
-                {incidentStatusOptions.map((value) => <SelectItem key={value} value={value}>{incidentStatusLabel(t, value)}</SelectItem>)}
+                {incidentStatusOptions.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {incidentStatusLabel(t, value)}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
-            <Select value={severityFilter} onValueChange={(value) => setSeverityFilter(value as "all" | IncidentSeverity)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+            <Select
+              value={severityFilter}
+              onValueChange={(value) => setSeverityFilter(value as "all" | IncidentSeverity)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{t("incidentsAllSeverities")}</SelectItem>
-                {incidentSeverityOptions.map((value) => <SelectItem key={value} value={value}>{incidentSeverityLabel(t, value)}</SelectItem>)}
+                {incidentSeverityOptions.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {incidentSeverityLabel(t, value)}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </CardContent>
         </Card>
 
         {incidents.length === 0 ? (
-          <Card className="app-surface"><CardContent className="py-8 text-sm text-muted-foreground">{t("incidentsNoMatches")}</CardContent></Card>
+          <Card className="app-surface">
+            <CardContent className="py-8 text-sm text-muted-foreground">{t("incidentsNoMatches")}</CardContent>
+          </Card>
         ) : (
           <div className="app-surface overflow-hidden">
             <Table>
@@ -327,14 +379,22 @@ export default function IncidentsPage() {
                       <Badge variant="secondary">{incidentTypeLabel(t, incident.incidentType)}</Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={severityClass(incident.severity)}>{incidentSeverityLabel(t, incident.severity)}</Badge>
+                      <Badge variant="outline" className={severityClass(incident.severity)}>
+                        {incidentSeverityLabel(t, incident.severity)}
+                      </Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={statusClass(incident.status)}>{incidentStatusLabel(t, incident.status)}</Badge>
+                      <Badge variant="outline" className={statusClass(incident.status)}>
+                        {incidentStatusLabel(t, incident.status)}
+                      </Badge>
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{formatDate(incident.reportedAt, { month: "short", day: "numeric", year: "numeric" })}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {formatDate(incident.reportedAt, { month: "short", day: "numeric", year: "numeric" })}
+                    </TableCell>
                     <TableCell className="text-right text-xs tabular-nums">{incident.attachmentCount}</TableCell>
-                    <TableCell className="text-right text-xs tabular-nums">{incident.estimatedRepairCost !== null ? formatCurrency(incident.estimatedRepairCost) : "—"}</TableCell>
+                    <TableCell className="text-right text-xs tabular-nums">
+                      {incident.estimatedRepairCost !== null ? formatCurrency(incident.estimatedRepairCost) : "—"}
+                    </TableCell>
                     <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -347,7 +407,10 @@ export default function IncidentsPage() {
                           <DropdownMenuItem asChild>
                             <Link href={`/incidents/${incident.id}`}>{t("assetViewDetails")}</Link>
                           </DropdownMenuItem>
-                          <DropdownMenuItem className="text-destructive" onClick={() => setPendingDeleteIncidentId(incident.id)}>
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={() => setPendingDeleteIncidentId(incident.id)}
+                          >
                             {t("assetDelete")}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
@@ -362,7 +425,11 @@ export default function IncidentsPage() {
 
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>
-            {t("showingCountOf", { current: incidents.length, total: totalIncidents, label: t("navIncidents").toLowerCase() })}
+            {t("showingCountOf", {
+              current: incidents.length,
+              total: totalIncidents,
+              label: t("navIncidents").toLowerCase(),
+            })}
           </span>
           <DataTablePagination page={page} pageSize={pageSize} total={totalIncidents} onPageChange={setPage} />
         </div>
@@ -411,10 +478,14 @@ export default function IncidentsPage() {
               <div className="grid gap-2">
                 <Label>{t("incidentsFieldType")}</Label>
                 <Select value={incidentType} onValueChange={(value) => setIncidentType(value as IncidentType)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     {incidentTypeOptions.map((value) => (
-                      <SelectItem key={value} value={value}>{incidentTypeLabel(t, value)}</SelectItem>
+                      <SelectItem key={value} value={value}>
+                        {incidentTypeLabel(t, value)}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -422,10 +493,14 @@ export default function IncidentsPage() {
               <div className="grid gap-2">
                 <Label>{t("incidentsFieldSeverity")}</Label>
                 <Select value={severity} onValueChange={(value) => setSeverity(value as IncidentSeverity)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     {incidentSeverityOptions.map((value) => (
-                      <SelectItem key={value} value={value}>{incidentSeverityLabel(t, value)}</SelectItem>
+                      <SelectItem key={value} value={value}>
+                        {incidentSeverityLabel(t, value)}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -437,7 +512,11 @@ export default function IncidentsPage() {
             </div>
             <div className="grid gap-2">
               <Label>{t("incidentsFieldDescription")}</Label>
-              <Textarea value={description} onChange={(event) => setDescription(event.target.value)} className="min-h-24" />
+              <Textarea
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                className="min-h-24"
+              />
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               <div className="grid gap-2">
@@ -446,13 +525,24 @@ export default function IncidentsPage() {
               </div>
               <div className="grid gap-2">
                 <Label>{t("incidentsEstimatedRepairCost")}</Label>
-                <Input type="number" min={0} step="0.01" value={estimatedRepairCost} onChange={(event) => setEstimatedRepairCost(event.target.value)} />
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={estimatedRepairCost}
+                  onChange={(event) => setEstimatedRepairCost(event.target.value)}
+                />
               </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpenCreate(false)}>{t("commonCancel")}</Button>
-            <Button onClick={createIncident} disabled={creating || !selectedAssetId || title.trim().length < 3 || description.trim().length < 5}>
+            <Button variant="outline" onClick={() => setOpenCreate(false)}>
+              {t("commonCancel")}
+            </Button>
+            <Button
+              onClick={createIncident}
+              disabled={creating || !selectedAssetId || title.trim().length < 3 || description.trim().length < 5}
+            >
               {creating ? t("settingsSaving") : t("incidentsCreateAction")}
             </Button>
           </DialogFooter>

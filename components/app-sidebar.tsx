@@ -35,8 +35,9 @@ import {
 } from "@/components/ui/sidebar"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { useAppRuntime } from "@/components/app-runtime-provider"
-import type { I18nKey } from "@/lib/i18n"
+import type { I18nKey } from "@/lib/utils/i18n"
 import { useCurrentUser } from "@/hooks/use-current-user"
+import { IsAdmin } from "@/components/is-admin"
 
 const mainNav: { key: I18nKey; icon: ComponentType<{ className?: string }>; href: string; adminOnly?: boolean }[] = [
   { key: "navDashboard", icon: LayoutDashboard, href: "/" },
@@ -99,30 +100,40 @@ export function AppSidebar() {
           <SidebarGroupLabel>{t("sidebarNavigation")}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainNav.map((item) => (
-                (item.adminOnly && !isAdmin) ? null : (
-                <SidebarMenuItem key={item.key}>
-                  <SidebarMenuButton asChild isActive={pathname === item.href} className="rounded-lg" tooltip={t(item.key)}>
-                    <Link href={item.href}>
-                      <item.icon />
-                      <span>{t(item.key)}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                )
-              ))}
+              {mainNav.map((item) =>
+                item.adminOnly && !isAdmin ? null : (
+                  <SidebarMenuItem key={item.key}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={pathname === item.href}
+                      className="rounded-lg"
+                      tooltip={t(item.key)}
+                    >
+                      <Link href={item.href}>
+                        <item.icon />
+                        <span>{t(item.key)}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ),
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {isAdmin ? (
+        <IsAdmin isAdmin={isAdmin}>
           <SidebarGroup>
             <SidebarGroupLabel>{t("sidebarManagement")}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {secondaryNav.map((item) => (
                   <SidebarMenuItem key={item.key}>
-                    <SidebarMenuButton asChild isActive={pathname === item.href} className="rounded-lg" tooltip={t(item.key)}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={pathname === item.href}
+                      className="rounded-lg"
+                      tooltip={t(item.key)}
+                    >
                       <Link href={item.href}>
                         <item.icon />
                         <span>{t(item.key)}</span>
@@ -133,7 +144,7 @@ export function AppSidebar() {
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
-        ) : null}
+        </IsAdmin>
       </SidebarContent>
 
       <SidebarSeparator />
@@ -166,7 +177,9 @@ export function AppSidebar() {
             >
               <Link href={currentUser?.memberId ? `/team/${currentUser.memberId}` : "/team"}>
                 <Avatar className="size-6 rounded-md group-data-[collapsible=icon]:size-5">
-                  <AvatarFallback className="rounded-md bg-sidebar-primary text-sidebar-primary-foreground text-[10px]">{initials}</AvatarFallback>
+                  <AvatarFallback className="rounded-md bg-sidebar-primary text-sidebar-primary-foreground text-[10px]">
+                    {initials}
+                  </AvatarFallback>
                 </Avatar>
                 <div className="flex flex-col group-data-[collapsible=icon]:hidden">
                   <span className="text-xs font-medium text-sidebar-foreground">{displayName}</span>

@@ -1,15 +1,7 @@
 "use client"
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts"
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
 import { TrendingUp } from "lucide-react"
 import { useAppRuntime } from "@/components/app-runtime-provider"
 
@@ -22,7 +14,7 @@ export function AssetOverviewChart({ data }: { data: AssetGrowthPoint[] }) {
   const { t } = useAppRuntime()
   const first = data[0]?.assets ?? 0
   const last = data[data.length - 1]?.assets ?? 0
-  const growth = first > 0 ? Math.round(((last - first) / first) * 100) : (last > 0 ? 100 : 0)
+  const growth = first > 0 ? Math.round(((last - first) / first) * 100) : last > 0 ? 100 : 0
 
   return (
     <Card className="app-surface">
@@ -48,22 +40,9 @@ export function AssetOverviewChart({ data }: { data: AssetGrowthPoint[] }) {
                   <stop offset="100%" stopColor="var(--color-primary)" stopOpacity={0.8} />
                 </linearGradient>
               </defs>
-              <CartesianGrid
-                strokeDasharray="3 3"
-                vertical={false}
-                className="stroke-border/40"
-              />
-              <XAxis
-                dataKey="month"
-                tickLine={false}
-                axisLine={false}
-                className="text-xs fill-muted-foreground"
-              />
-              <YAxis
-                tickLine={false}
-                axisLine={false}
-                className="text-xs fill-muted-foreground"
-              />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/40" />
+              <XAxis dataKey="month" tickLine={false} axisLine={false} className="text-xs fill-muted-foreground" />
+              <YAxis tickLine={false} axisLine={false} className="text-xs fill-muted-foreground" />
               <Tooltip
                 cursor={{ fill: "var(--color-muted)" }}
                 contentStyle={{
@@ -74,11 +53,7 @@ export function AssetOverviewChart({ data }: { data: AssetGrowthPoint[] }) {
                   boxShadow: "0 8px 24px color-mix(in oklch, var(--color-foreground) 12%, transparent)",
                 }}
               />
-              <Bar
-                dataKey="assets"
-                fill="url(#barGradient)"
-                radius={[6, 6, 0, 0]}
-              />
+              <Bar dataKey="assets" fill="url(#barGradient)" radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { toPublicErrorMessage } from "@/lib/api-error"
+import { toPublicErrorMessage } from "@/lib/utils/api-error"
 
 describe("toPublicErrorMessage", () => {
   it("returns fallback for non-error inputs", () => {

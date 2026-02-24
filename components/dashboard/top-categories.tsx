@@ -1,27 +1,17 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { type AssetCategorySummary } from "@/lib/data"
 import { useAppRuntime } from "@/components/app-runtime-provider"
+import { trpc } from "@/lib/trpc/react"
 
 export function TopCategories() {
   const { t } = useAppRuntime()
-  const [categories, setCategories] = useState<AssetCategorySummary[]>([])
+  const categoriesQuery = trpc.categories.summary.useQuery(undefined, {
+    staleTime: 60_000,
+  })
 
-  useEffect(() => {
-    const loadCategories = async () => {
-      const response = await fetch("/api/categories", { cache: "no-store" })
-      if (!response.ok) {
-        return
-      }
-      const payload = await response.json()
-      setCategories(payload.categories)
-    }
-
-    loadCategories()
-  }, [])
+  const categories = categoriesQuery.data ?? []
 
   const total = categories.reduce((sum, cat) => sum + cat.count, 0)
 
@@ -29,7 +19,9 @@ export function TopCategories() {
     <Card className="app-surface">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium">{t("navCategories")}</CardTitle>
-        <CardDescription className="text-xs">{t("dashboardTotalCategories", { total: categories.length })}</CardDescription>
+        <CardDescription className="text-xs">
+          {t("dashboardTotalCategories", { total: categories.length })}
+        </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {categories.map((category) => {

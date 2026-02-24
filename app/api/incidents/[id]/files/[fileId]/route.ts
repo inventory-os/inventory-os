@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
-import { deleteIncidentFileRecord, getIncidentFileById } from "@/lib/core-repository"
-import { readStoredIncidentFile, removeStoredIncidentFile } from "@/lib/asset-storage"
+import { deleteIncidentFileRecord, getIncidentFileById } from "@/lib/services"
+import { readStoredIncidentFile, removeStoredIncidentFile } from "@/lib/services/asset-storage.service"
 
 function sanitizeDownloadName(value: string): string {
   return value.replace(/[\r\n]/g, "_")

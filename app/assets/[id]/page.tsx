@@ -17,19 +17,18 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { SearchableSelect } from "@/components/ui/searchable-select"
-import { type Asset, type AssetFile, type IncidentRecord, type LoanRecord, type TeamMember } from "@/lib/data"
+import { type Asset, type AssetFile, type IncidentRecord, type LoanRecord, type TeamMember } from "@/lib/types"
 import { useCurrentUser } from "@/hooks/use-current-user"
 import { useAppRuntime } from "@/components/app-runtime-provider"
+import { trpc } from "@/lib/trpc/react"
+import { StyledQrCodeCard } from "@/components/styled-qr-code-card"
 
-export default function AssetDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>
-}) {
+export default function AssetDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter()
   const { id } = use(params)
   const { t, formatCurrency } = useAppRuntime()
   const { isAdmin } = useCurrentUser()
+  const trpcUtils = trpc.useUtils()
   const [asset, setAsset] = useState<Asset | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [history, setHistory] = useState<LoanRecord[]>([])
@@ -39,34 +38,34 @@ export default function AssetDetailPage({
   const [files, setFiles] = useState<AssetFile[]>([])
   const [borrowMemberId, setBorrowMemberId] = useState<string>("")
   const [borrowDueDate, setBorrowDueDate] = useState<string>("")
-  const [isDownloadingQr, setIsDownloadingQr] = useState(false)
   const [isUploadingFile, setIsUploadingFile] = useState(false)
   const [uploadKind, setUploadKind] = useState<"image" | "document">("image")
   const [pictureIndex, setPictureIndex] = useState(0)
   const [openDeleteAssetDialog, setOpenDeleteAssetDialog] = useState(false)
   const [pendingDeleteFile, setPendingDeleteFile] = useState<AssetFile | null>(null)
 
+  const borrowAssetMutation = trpc.assets.borrow.useMutation()
+  const returnAssetMutation = trpc.assets.return.useMutation()
+  const removeAssetMutation = trpc.assets.remove.useMutation()
+  const duplicateAssetMutation = trpc.assets.duplicate.useMutation()
+
   const loadData = async () => {
     setIsLoading(true)
-    const [assetResponse, membersResponse] = await Promise.all([
-      fetch(`/api/assets/${id}`, { cache: "no-store" }),
-      fetch("/api/members", { cache: "no-store" }),
+    const [assetData, historyData, incidentsData, childrenData, membersData] = await Promise.all([
+      trpcUtils.assets.byId.fetch({ id }),
+      trpcUtils.assets.history.fetch({ assetId: id }),
+      trpcUtils.incidents.listByAsset.fetch({ assetId: id }),
+      trpcUtils.assets.listChildren.fetch({ parentAssetId: id }),
+      trpcUtils.members.list.fetch(),
     ])
 
     const filesResponse = await fetch(`/api/assets/${id}/files`, { cache: "no-store" })
 
-    if (assetResponse.ok) {
-      const payload = await assetResponse.json()
-      setAsset(payload.asset)
-      setHistory(payload.history)
-      setIncidents(payload.incidents ?? [])
-      setChildren(payload.children ?? [])
-    }
-
-    if (membersResponse.ok) {
-      const payload = await membersResponse.json()
-      setMembers(payload.members)
-    }
+    setAsset((assetData as Asset | null | undefined) ?? null)
+    setHistory((historyData as LoanRecord[] | undefined) ?? [])
+    setIncidents((incidentsData as IncidentRecord[] | undefined) ?? [])
+    setChildren((childrenData as Asset[] | undefined) ?? [])
+    setMembers((membersData as TeamMember[] | undefined) ?? [])
 
     if (filesResponse.ok) {
       const payload = await filesResponse.json()
@@ -98,27 +97,22 @@ export default function AssetDetailPage({
     if (!borrowMemberId) {
       return
     }
-    await fetch(`/api/assets/${id}/borrow`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "borrow", memberId: borrowMemberId, dueAt: borrowDueDate || undefined }),
-    })
+    await borrowAssetMutation.mutateAsync({ assetId: id, memberId: borrowMemberId, dueAt: borrowDueDate || undefined })
     setBorrowMemberId("")
     setBorrowDueDate("")
     await loadData()
   }
 
   const handleReturn = async () => {
-    await fetch(`/api/assets/${id}/borrow`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "return" }),
-    })
+    await returnAssetMutation.mutateAsync({ assetId: id })
     await loadData()
   }
 
   const handleDelete = async () => {
-    const response = await fetch(`/api/assets/${id}`, { method: "DELETE" })
+    const response = await removeAssetMutation.mutateAsync({ id }).then(
+      () => ({ ok: true }),
+      () => ({ ok: false }),
+    )
     if (!response.ok) {
       return
     }
@@ -126,13 +120,15 @@ export default function AssetDetailPage({
   }
 
   const handleDuplicate = async () => {
-    const response = await fetch(`/api/assets/${id}/duplicate`, { method: "POST" })
-    if (!response.ok) {
+    const duplicated = await duplicateAssetMutation.mutateAsync({ sourceAssetId: id }).then(
+      (asset) => asset,
+      () => null,
+    )
+    if (!duplicated) {
       return
     }
 
-    const payload = await response.json()
-    const duplicatedId = payload.asset?.id as string | undefined
+    const duplicatedId = duplicated?.id
     if (duplicatedId) {
       router.push(`/assets/${duplicatedId}/edit`)
     }
@@ -168,72 +164,16 @@ export default function AssetDetailPage({
     await loadData()
   }
 
-  const handleDownloadStyledQrPng = async () => {
-    if (!asset) {
-      return
-    }
-
-    setIsDownloadingQr(true)
-
-    try {
-      const response = await fetch(`/api/assets/${asset.id}/qr/styled?size=1024`, { cache: "no-store" })
-      if (!response.ok) {
-        return
-      }
-
-      const svgText = await response.text()
-      const svgBlob = new Blob([svgText], { type: "image/svg+xml;charset=utf-8" })
-      const svgUrl = URL.createObjectURL(svgBlob)
-
-      const image = new Image()
-      image.decoding = "async"
-
-      const loaded = new Promise<void>((resolve, reject) => {
-        image.onload = () => resolve()
-        image.onerror = () => reject(new Error("Failed to load styled QR image"))
-      })
-
-      image.src = svgUrl
-      await loaded
-
-      const width = image.naturalWidth || 1024
-      const height = image.naturalHeight || 1024
-      const canvas = document.createElement("canvas")
-      canvas.width = width
-      canvas.height = height
-
-      const context = canvas.getContext("2d")
-      if (!context) {
-        URL.revokeObjectURL(svgUrl)
-        return
-      }
-
-      context.fillStyle = "#FFFFFF"
-      context.fillRect(0, 0, width, height)
-      context.drawImage(image, 0, 0, width, height)
-
-      const pngBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"))
-      URL.revokeObjectURL(svgUrl)
-      if (!pngBlob) {
-        return
-      }
-
-      const pngUrl = URL.createObjectURL(pngBlob)
-      const link = document.createElement("a")
-      link.href = pngUrl
-      link.download = `asset-${asset.id}-qr-styled.png`
-      link.click()
-      URL.revokeObjectURL(pngUrl)
-    } finally {
-      setIsDownloadingQr(false)
-    }
-  }
-
   if (isLoading) {
     return (
       <AppShell>
-        <PageHeader title={t("assetLoadingTitle")} breadcrumbs={[{ label: t("navAssets"), href: "/assets" }, { label: t("commonLoading") }]} />
-        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">{t("assetLoadingDetails")}</div>
+        <PageHeader
+          title={t("assetLoadingTitle")}
+          breadcrumbs={[{ label: t("navAssets"), href: "/assets" }, { label: t("commonLoading") }]}
+        />
+        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+          {t("assetLoadingDetails")}
+        </div>
       </AppShell>
     )
   }
@@ -241,13 +181,14 @@ export default function AssetDetailPage({
   if (!asset) {
     return (
       <AppShell>
-        <PageHeader title={t("assetNotFoundTitle")} breadcrumbs={[{ label: t("navAssets"), href: "/assets" }, { label: t("commonNotFound") }]} />
+        <PageHeader
+          title={t("assetNotFoundTitle")}
+          breadcrumbs={[{ label: t("navAssets"), href: "/assets" }, { label: t("commonNotFound") }]}
+        />
         <div className="flex flex-1 items-center justify-center">
           <div className="text-center">
             <h2 className="text-lg font-semibold">{t("assetNotFoundTitle")}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {t("assetNotFoundDescription")}
-            </p>
+            <p className="mt-1 text-sm text-muted-foreground">{t("assetNotFoundDescription")}</p>
             <Button asChild className="mt-4" size="sm">
               <Link href="/assets">{t("assetBackToAssets")}</Link>
             </Button>
@@ -258,8 +199,7 @@ export default function AssetDetailPage({
   }
 
   const isBorrowed = Boolean(asset.assignedTo)
-  const qrStyledPreviewUrl = `/api/assets/${asset.id}/qr/styled?size=320&v=2`
-  const assetQrUrl = typeof window === "undefined" ? asset.qrCode : `${window.location.origin}/qr/${asset.id}`
+  const assetQrUrl = typeof window === "undefined" ? `/qr/${asset.id}` : `${window.location.origin}/qr/${asset.id}`
   const imageFiles = files.filter((file) => file.kind === "image" || file.mimeType.startsWith("image/"))
   const activePicture = imageFiles[pictureIndex] ?? null
 
@@ -267,10 +207,7 @@ export default function AssetDetailPage({
     <AppShell>
       <PageHeader
         title={asset.name}
-        breadcrumbs={[
-          { label: t("navAssets"), href: "/assets" },
-          { label: asset.name },
-        ]}
+        breadcrumbs={[{ label: t("navAssets"), href: "/assets" }, { label: asset.name }]}
       />
       <div className="app-page">
         <div className="flex items-center justify-between">
@@ -282,7 +219,13 @@ export default function AssetDetailPage({
           </Button>
           <div className="flex items-center gap-2">
             {isAdmin ? (
-              <Button variant="outline" size="sm" onClick={() => { void handleDuplicate() }}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  void handleDuplicate()
+                }}
+              >
                 <Copy className="mr-1.5 size-3.5" />
                 {t("commonDuplicate")}
               </Button>
@@ -296,7 +239,12 @@ export default function AssetDetailPage({
               </Button>
             ) : null}
             {isAdmin ? (
-              <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setOpenDeleteAssetDialog(true)}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                onClick={() => setOpenDeleteAssetDialog(true)}
+              >
                 <Trash2 className="mr-1.5 size-3.5" />
                 {t("assetDelete")}
               </Button>
@@ -312,7 +260,9 @@ export default function AssetDetailPage({
             <div className="mb-6">
               <Card className="app-surface">
                 <CardHeader>
-                  <CardTitle className="text-sm font-medium">{t("assetNestedAssets")} ({children.length})</CardTitle>
+                  <CardTitle className="text-sm font-medium">
+                    {t("assetNestedAssets")} ({children.length})
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {children.length === 0 ? (
@@ -343,14 +293,24 @@ export default function AssetDetailPage({
                             <div className="flex items-center gap-2">
                               <p className="truncate text-sm font-medium">{child.name}</p>
                               <StatusBadge status={child.status} />
-                              <Badge variant="secondary" className="text-[10px]">{child.category}</Badge>
+                              <Badge variant="secondary" className="text-[10px]">
+                                {child.category}
+                              </Badge>
                             </div>
                             <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                               <span className="font-mono">{child.id}</span>
-                              <span>{t("assetTableLocation")}: {child.location}</span>
-                              <span>{t("assetTableAssignedTo")}: {child.assignedTo ?? t("assetUnassigned")}</span>
+                              <span>
+                                {t("assetTableLocation")}: {child.location}
+                              </span>
+                              <span>
+                                {t("assetTableAssignedTo")}: {child.assignedTo ?? t("assetUnassigned")}
+                              </span>
                               {child.tags.slice(0, 2).map((tag) => (
-                                <Badge key={`${child.id}-${tag}`} variant="outline" className="rounded-full text-[10px]">
+                                <Badge
+                                  key={`${child.id}-${tag}`}
+                                  variant="outline"
+                                  className="rounded-full text-[10px]"
+                                >
                                   {tag}
                                 </Badge>
                               ))}
@@ -415,7 +375,9 @@ export default function AssetDetailPage({
             <div className="mb-6">
               <Card className="app-surface">
                 <CardHeader>
-                  <CardTitle className="text-sm font-medium">{t("incidentsOnAsset")} ({incidents.length})</CardTitle>
+                  <CardTitle className="text-sm font-medium">
+                    {t("incidentsOnAsset")} ({incidents.length})
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2">
                   {incidents.length === 0 ? (
@@ -424,8 +386,12 @@ export default function AssetDetailPage({
                     incidents.slice(0, 5).map((incident) => (
                       <div key={incident.id} className="rounded-md border px-3 py-2">
                         <div className="flex flex-wrap items-center gap-2">
-                          <Link href={`/incidents/${incident.id}`} className="text-xs font-medium hover:text-primary">{incident.title}</Link>
-                          <Badge variant="outline" className="font-mono text-[10px]">{incident.id}</Badge>
+                          <Link href={`/incidents/${incident.id}`} className="text-xs font-medium hover:text-primary">
+                            {incident.title}
+                          </Link>
+                          <Badge variant="outline" className="font-mono text-[10px]">
+                            {incident.id}
+                          </Badge>
                           <Badge variant="outline" className="text-[10px]">
                             {incident.status === "open"
                               ? t("incidentsStatusOpen")
@@ -442,7 +408,9 @@ export default function AssetDetailPage({
                                   ? t("incidentsSeverityHigh")
                                   : t("incidentsSeverityCritical")}
                           </Badge>
-                          <Badge variant="outline" className="text-[10px]">{incident.attachmentCount} {t("incidentsAttachments")}</Badge>
+                          <Badge variant="outline" className="text-[10px]">
+                            {incident.attachmentCount} {t("incidentsAttachments")}
+                          </Badge>
                         </div>
                         <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">{incident.description}</p>
                         <div className="mt-1 text-[11px] text-muted-foreground">
@@ -475,7 +443,10 @@ export default function AssetDetailPage({
                     <div className="grid gap-3 sm:grid-cols-[180px_1fr] sm:items-end">
                       <div className="grid gap-2">
                         <Label>{t("assetUploadType")}</Label>
-                        <Select value={uploadKind} onValueChange={(value) => setUploadKind(value as "image" | "document") }>
+                        <Select
+                          value={uploadKind}
+                          onValueChange={(value) => setUploadKind(value as "image" | "document")}
+                        >
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
@@ -486,11 +457,17 @@ export default function AssetDetailPage({
                         </Select>
                       </div>
                       <div className="rounded-lg border border-dashed p-3">
-                        <Label htmlFor="asset-file-upload" className="sr-only">{t("assetUploadFile")}</Label>
+                        <Label htmlFor="asset-file-upload" className="sr-only">
+                          {t("assetUploadFile")}
+                        </Label>
                         <Input
                           id="asset-file-upload"
                           type="file"
-                          accept={uploadKind === "image" ? "image/*" : ".pdf,.doc,.docx,.txt,.csv,.xlsx,.xls,.png,.jpg,.jpeg,.webp"}
+                          accept={
+                            uploadKind === "image"
+                              ? "image/*"
+                              : ".pdf,.doc,.docx,.txt,.csv,.xlsx,.xls,.png,.jpg,.jpeg,.webp"
+                          }
                           disabled={isUploadingFile}
                           onChange={(event) => {
                             const selected = event.target.files?.[0] ?? null
@@ -511,30 +488,49 @@ export default function AssetDetailPage({
                       {files.map((file) => {
                         const isImage = file.kind === "image" || file.mimeType.startsWith("image/")
                         return (
-                        <div key={file.id} className="flex items-center justify-between gap-2 rounded-md border px-2.5 py-2">
-                          <div className="flex min-w-0 items-center gap-2">
-                            {isImage ? <ImageIcon className="size-3.5 shrink-0 text-muted-foreground" /> : <FileText className="size-3.5 shrink-0 text-muted-foreground" />}
-                            <a
-                              href={isImage ? `/api/assets/${asset.id}/files/${file.id}` : `/api/assets/${asset.id}/files/${file.id}?download=1`}
-                              target={isImage ? "_blank" : undefined}
-                              rel={isImage ? "noreferrer" : undefined}
-                              className="truncate text-xs font-medium hover:text-primary"
-                            >
-                              {file.originalName}
-                            </a>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Button size="sm" variant="ghost" className="h-7 px-2" asChild>
-                              <a href={`/api/assets/${asset.id}/files/${file.id}?download=1`}>{t("commonDownload")}</a>
-                            </Button>
-                            {isAdmin ? (
-                              <Button size="sm" variant="ghost" className="h-7 px-2 text-destructive" onClick={() => setPendingDeleteFile(file)}>
-                                {t("commonRemove")}
+                          <div
+                            key={file.id}
+                            className="flex items-center justify-between gap-2 rounded-md border px-2.5 py-2"
+                          >
+                            <div className="flex min-w-0 items-center gap-2">
+                              {isImage ? (
+                                <ImageIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                              ) : (
+                                <FileText className="size-3.5 shrink-0 text-muted-foreground" />
+                              )}
+                              <a
+                                href={
+                                  isImage
+                                    ? `/api/assets/${asset.id}/files/${file.id}`
+                                    : `/api/assets/${asset.id}/files/${file.id}?download=1`
+                                }
+                                target={isImage ? "_blank" : undefined}
+                                rel={isImage ? "noreferrer" : undefined}
+                                className="truncate text-xs font-medium hover:text-primary"
+                              >
+                                {file.originalName}
+                              </a>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Button size="sm" variant="ghost" className="h-7 px-2" asChild>
+                                <a href={`/api/assets/${asset.id}/files/${file.id}?download=1`}>
+                                  {t("commonDownload")}
+                                </a>
                               </Button>
-                            ) : null}
+                              {isAdmin ? (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 px-2 text-destructive"
+                                  onClick={() => setPendingDeleteFile(file)}
+                                >
+                                  {t("commonRemove")}
+                                </Button>
+                              ) : null}
+                            </div>
                           </div>
-                        </div>
-                      )})}
+                        )
+                      })}
                       {files.length === 0 && <p className="text-xs text-muted-foreground">{t("assetNoFilesYet")}</p>}
                     </div>
                   </div>
@@ -547,7 +543,12 @@ export default function AssetDetailPage({
           <div>
             {activePicture ? (
               <div className="mb-6">
-                <a href={`/api/assets/${asset.id}/files/${activePicture.id}`} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-xl bg-white/60">
+                <a
+                  href={`/api/assets/${asset.id}/files/${activePicture.id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block overflow-hidden rounded-xl bg-white/60"
+                >
                   <img
                     src={`/api/assets/${asset.id}/files/${activePicture.id}`}
                     alt={activePicture.originalName}
@@ -557,23 +558,14 @@ export default function AssetDetailPage({
               </div>
             ) : null}
 
-            <Card className="app-surface mb-6">
-              <CardHeader>
-                <CardTitle className="text-sm font-medium">{t("assetQrCardTitle")}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="mx-auto w-full max-w-[220px] rounded-xl border bg-white p-3">
-                  <img src={qrStyledPreviewUrl} alt={`QR for ${asset.name}`} className="mx-auto h-auto w-full" />
-                </div>
-                <div className="space-y-2">
-                  <p className="truncate font-mono text-xs text-muted-foreground" title={assetQrUrl}>{assetQrUrl}</p>
-                  <Button size="sm" variant="outline" className="w-full" onClick={handleDownloadStyledQrPng} disabled={isDownloadingQr}>
-                    {isDownloadingQr ? <Upload className="mr-1.5 size-3.5 animate-spin" /> : <ArrowDownToLine className="mr-1.5 size-3.5" />}
-                    {isDownloadingQr ? t("assetPreparingPng") : t("assetDownloadPng")}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+            <StyledQrCodeCard
+              title={t("assetQrCardTitle")}
+              payload={assetQrUrl}
+              entityName={asset.name}
+              downloadFileName={`asset-${asset.id}-qr-styled.png`}
+              downloadLabel={t("assetDownloadPng")}
+              preparingLabel={t("assetPreparingPng")}
+            />
             <AssetLocationMap asset={asset} />
           </div>
         </div>

@@ -10,8 +10,9 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Search, Package, Factory, Users, MapPin, Tags } from "lucide-react"
-import type { Asset, LocationData, ManagedCategory, Producer, TeamMember } from "@/lib/data"
+import type { Asset, LocationData, ManagedCategory, Producer, TeamMember } from "@/lib/types"
 import { useAppRuntime } from "@/components/app-runtime-provider"
+import { trpc } from "@/lib/trpc/react"
 
 type AssetSearchResult = {
   asset: Asset
@@ -51,8 +52,6 @@ export default function GlobalSearchPage() {
   const queryFromUrl = searchParams.get("q") ?? ""
 
   const [search, setSearch] = useState(queryFromUrl)
-  const [results, setResults] = useState<SearchPayload>(EMPTY_RESULTS)
-  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     setSearch(queryFromUrl)
@@ -76,39 +75,17 @@ export default function GlobalSearchPage() {
     return () => window.clearTimeout(timer)
   }, [queryFromUrl, router, search])
 
-  useEffect(() => {
-    const query = queryFromUrl.trim()
-    if (!query) {
-      setResults(EMPTY_RESULTS)
-      return
-    }
+  const query = queryFromUrl.trim()
+  const searchQuery = trpc.search.query.useQuery(
+    { query },
+    {
+      enabled: query.length > 0,
+      staleTime: 10_000,
+    },
+  )
 
-    let cancelled = false
-    setLoading(true)
-
-    const loadResults = async () => {
-      const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`, { cache: "no-store" })
-      if (!response.ok) {
-        if (!cancelled) {
-          setResults(EMPTY_RESULTS)
-          setLoading(false)
-        }
-        return
-      }
-
-      const payload = (await response.json()) as SearchPayload
-      if (!cancelled) {
-        setResults(payload)
-        setLoading(false)
-      }
-    }
-
-    void loadResults()
-
-    return () => {
-      cancelled = true
-    }
-  }, [queryFromUrl])
+  const results = (searchQuery.data as SearchPayload | undefined) ?? EMPTY_RESULTS
+  const loading = searchQuery.isLoading || searchQuery.isFetching
 
   const totalMatches = useMemo(() => {
     return (
@@ -170,7 +147,11 @@ export default function GlobalSearchPage() {
 
         {queryFromUrl.trim() ? (
           <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>{loading ? t("commonLoading") : t("globalSearchResultsCount", { count: totalMatches, query: queryFromUrl })}</span>
+            <span>
+              {loading
+                ? t("commonLoading")
+                : t("globalSearchResultsCount", { count: totalMatches, query: queryFromUrl })}
+            </span>
           </div>
         ) : null}
 
@@ -186,19 +167,35 @@ export default function GlobalSearchPage() {
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Card className="app-surface">
               <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm"><Package className="size-4" /> {t("navAssets")}</CardTitle>
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Package className="size-4" /> {t("navAssets")}
+                </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {results.assets.length === 0 ? <p className="text-xs text-muted-foreground">{t("globalSearchNoSectionResults")}</p> : null}
+                {results.assets.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">{t("globalSearchNoSectionResults")}</p>
+                ) : null}
                 {results.assets.map((result) => (
-                  <Link key={result.asset.id} href={`/assets/${result.asset.id}`} className="block rounded-md border p-2.5 hover:bg-muted/40">
+                  <Link
+                    key={result.asset.id}
+                    href={`/assets/${result.asset.id}`}
+                    className="block rounded-md border p-2.5 hover:bg-muted/40"
+                  >
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-sm font-medium">{result.asset.name}</p>
-                      {result.matchType !== "direct" ? <Badge variant="outline" className="text-[10px]">{t(matchTypeLabelKey[result.matchType])}</Badge> : null}
+                      {result.matchType !== "direct" ? (
+                        <Badge variant="outline" className="text-[10px]">
+                          {t(matchTypeLabelKey[result.matchType])}
+                        </Badge>
+                      ) : null}
                     </div>
-                    <p className="text-xs text-muted-foreground">{result.asset.id} · {result.asset.producerName ?? t("assetNoProducer")}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {result.asset.id} · {result.asset.producerName ?? t("assetNoProducer")}
+                    </p>
                     <div className="mt-1 flex items-center gap-2">
-                      <Badge variant="secondary" className="text-[10px]">{result.asset.category}</Badge>
+                      <Badge variant="secondary" className="text-[10px]">
+                        {result.asset.category}
+                      </Badge>
                       <span className="text-[11px] text-muted-foreground">{formatCurrency(result.asset.value)}</span>
                     </div>
                   </Link>
@@ -208,10 +205,14 @@ export default function GlobalSearchPage() {
 
             <Card className="app-surface">
               <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm"><Factory className="size-4" /> {t("navProducers")}</CardTitle>
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Factory className="size-4" /> {t("navProducers")}
+                </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {results.producers.length === 0 ? <p className="text-xs text-muted-foreground">{t("globalSearchNoSectionResults")}</p> : null}
+                {results.producers.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">{t("globalSearchNoSectionResults")}</p>
+                ) : null}
                 {results.producers.map((producer) => (
                   <Link key={producer.id} href="/producers" className="block rounded-md border p-2.5 hover:bg-muted/40">
                     <p className="text-sm font-medium">{producer.name}</p>
@@ -223,12 +224,20 @@ export default function GlobalSearchPage() {
 
             <Card className="app-surface">
               <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm"><Users className="size-4" /> {t("navTeam")}</CardTitle>
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Users className="size-4" /> {t("navTeam")}
+                </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {results.members.length === 0 ? <p className="text-xs text-muted-foreground">{t("globalSearchNoSectionResults")}</p> : null}
+                {results.members.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">{t("globalSearchNoSectionResults")}</p>
+                ) : null}
                 {results.members.map((member) => (
-                  <Link key={member.id} href={`/team/${member.id}`} className="block rounded-md border p-2.5 hover:bg-muted/40">
+                  <Link
+                    key={member.id}
+                    href={`/team/${member.id}`}
+                    className="block rounded-md border p-2.5 hover:bg-muted/40"
+                  >
                     <p className="text-sm font-medium">{member.name}</p>
                     <p className="text-xs text-muted-foreground">{member.email}</p>
                   </Link>
@@ -238,12 +247,20 @@ export default function GlobalSearchPage() {
 
             <Card className="app-surface">
               <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm"><MapPin className="size-4" /> {t("navLocations")}</CardTitle>
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <MapPin className="size-4" /> {t("navLocations")}
+                </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {results.locations.length === 0 ? <p className="text-xs text-muted-foreground">{t("globalSearchNoSectionResults")}</p> : null}
+                {results.locations.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">{t("globalSearchNoSectionResults")}</p>
+                ) : null}
                 {results.locations.map((location) => (
-                  <Link key={location.id} href={`/locations/${location.id}`} className="block rounded-md border p-2.5 hover:bg-muted/40">
+                  <Link
+                    key={location.id}
+                    href={`/locations/${location.id}`}
+                    className="block rounded-md border p-2.5 hover:bg-muted/40"
+                  >
                     <p className="text-sm font-medium">{location.name}</p>
                     <p className="text-xs text-muted-foreground">{location.path}</p>
                   </Link>
@@ -253,15 +270,25 @@ export default function GlobalSearchPage() {
 
             <Card className="app-surface lg:col-span-2">
               <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm"><Tags className="size-4" /> {t("navCategories")}</CardTitle>
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Tags className="size-4" /> {t("navCategories")}
+                </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {results.categories.length === 0 ? <p className="text-xs text-muted-foreground">{t("globalSearchNoSectionResults")}</p> : null}
+                {results.categories.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">{t("globalSearchNoSectionResults")}</p>
+                ) : null}
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {results.categories.map((category) => (
-                    <Link key={category.id} href="/categories" className="block rounded-md border p-2.5 hover:bg-muted/40">
+                    <Link
+                      key={category.id}
+                      href="/categories"
+                      className="block rounded-md border p-2.5 hover:bg-muted/40"
+                    >
                       <p className="text-sm font-medium">{category.name}</p>
-                      <p className="text-xs text-muted-foreground">{t("navAssets")}: {category.assetCount}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {t("navAssets")}: {category.assetCount}
+                      </p>
                     </Link>
                   ))}
                 </div>

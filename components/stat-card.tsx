@@ -10,20 +10,12 @@ interface StatCardProps {
   icon: LucideIcon
 }
 
-export function StatCard({
-  title,
-  value,
-  change,
-  changeType = "neutral",
-  icon: Icon,
-}: StatCardProps) {
+export function StatCard({ title, value, change, changeType = "neutral", icon: Icon }: StatCardProps) {
   return (
     <Card className="app-kpi group transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-md hover:shadow-primary/5">
       <CardContent className="flex items-center justify-between p-5">
         <div className="flex flex-col gap-1.5">
-          <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-            {title}
-          </span>
+          <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{title}</span>
           <span className="text-2xl font-bold tracking-tight">{value}</span>
           {change && (
             <span
@@ -31,7 +23,7 @@ export function StatCard({
                 "text-xs font-medium",
                 changeType === "positive" && "text-success",
                 changeType === "negative" && "text-destructive",
-                changeType === "neutral" && "text-muted-foreground"
+                changeType === "neutral" && "text-muted-foreground",
               )}
             >
               {change}

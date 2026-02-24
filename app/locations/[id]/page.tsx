@@ -13,9 +13,11 @@ import { SearchableSelect } from "@/components/ui/searchable-select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DataTablePagination } from "@/components/ui/data-table-pagination"
 import { StatusBadge } from "@/components/status-badge"
-import { ArrowDownToLine, ArrowLeft, MapPin, FolderTree, Package, Search, Upload } from "lucide-react"
-import type { Asset, LocationData } from "@/lib/data"
+import { ArrowLeft, MapPin, FolderTree, Package, Search } from "lucide-react"
+import type { Asset, LocationData } from "@/lib/types"
 import { useAppRuntime } from "@/components/app-runtime-provider"
+import { trpc } from "@/lib/trpc/react"
+import { StyledQrCodeCard } from "@/components/styled-qr-code-card"
 
 type LocationDetailsPayload = {
   location: LocationData
@@ -32,123 +34,57 @@ type LocationDetailsPayload = {
   qrPayload: string
 }
 
-export default function LocationDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>
-}) {
+export default function LocationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const { t, formatCurrency } = useAppRuntime()
   const [payload, setPayload] = useState<LocationDetailsPayload | null>(null)
   const [loading, setLoading] = useState(true)
-  const [isDownloadingQr, setIsDownloadingQr] = useState(false)
   const [assetSearch, setAssetSearch] = useState("")
   const [assetStatusFilter, setAssetStatusFilter] = useState<Asset["status"] | "all">("all")
   const [assetCategoryFilter, setAssetCategoryFilter] = useState<string | "all">("all")
   const [page, setPage] = useState(1)
   const [pageSize] = useState(10)
-  const [totalAssets, setTotalAssets] = useState(0)
   const assets = payload?.assets ?? []
+  const totalAssets = payload?.pagination?.total ?? assets.length
+
+  const locationDetailsQuery = trpc.locations.details.useQuery(
+    {
+      id,
+      page,
+      pageSize,
+      search: assetSearch,
+      status: assetStatusFilter,
+      category: assetCategoryFilter,
+    },
+    {
+      staleTime: 10_000,
+    },
+  )
 
   const assetCategories = useMemo(() => {
     return payload?.assetCategories ?? []
   }, [payload])
 
   useEffect(() => {
-    const loadData = async () => {
-      setLoading(true)
-      const params = new URLSearchParams({
-        page: String(page),
-        pageSize: String(pageSize),
-        search: assetSearch,
-        status: assetStatusFilter,
-        category: assetCategoryFilter,
-      })
-      const response = await fetch(`/api/locations/${id}?${params.toString()}`, { cache: "no-store" })
-      if (!response.ok) {
-        setPayload(null)
-        setLoading(false)
-        return
-      }
-      const data = (await response.json()) as LocationDetailsPayload
-      setPayload(data)
-      setTotalAssets(data.pagination?.total ?? data.assets.length)
-      setLoading(false)
-    }
-
-    void loadData()
-  }, [id, page, pageSize, assetSearch, assetStatusFilter, assetCategoryFilter])
+    setLoading(locationDetailsQuery.isLoading || locationDetailsQuery.isFetching)
+    const data = (locationDetailsQuery.data as LocationDetailsPayload | null | undefined) ?? null
+    setPayload(data)
+  }, [locationDetailsQuery.data, locationDetailsQuery.isLoading, locationDetailsQuery.isFetching])
 
   useEffect(() => {
     setPage(1)
   }, [assetSearch, assetStatusFilter, assetCategoryFilter])
 
-  const handleDownloadStyledQrPng = async () => {
-    if (!payload) {
-      return
-    }
-
-    setIsDownloadingQr(true)
-
-    try {
-      const response = await fetch(`/api/locations/${payload.location.id}/qr/styled?size=1024`, { cache: "no-store" })
-      if (!response.ok) {
-        return
-      }
-
-      const svgText = await response.text()
-      const svgBlob = new Blob([svgText], { type: "image/svg+xml;charset=utf-8" })
-      const svgUrl = URL.createObjectURL(svgBlob)
-
-      const image = new Image()
-      image.decoding = "async"
-
-      const loaded = new Promise<void>((resolve, reject) => {
-        image.onload = () => resolve()
-        image.onerror = () => reject(new Error("Failed to load styled QR image"))
-      })
-
-      image.src = svgUrl
-      await loaded
-
-      const width = image.naturalWidth || 1024
-      const height = image.naturalHeight || 1024
-      const canvas = document.createElement("canvas")
-      canvas.width = width
-      canvas.height = height
-
-      const context = canvas.getContext("2d")
-      if (!context) {
-        URL.revokeObjectURL(svgUrl)
-        return
-      }
-
-      context.fillStyle = "#FFFFFF"
-      context.fillRect(0, 0, width, height)
-      context.drawImage(image, 0, 0, width, height)
-
-      const pngBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"))
-      URL.revokeObjectURL(svgUrl)
-      if (!pngBlob) {
-        return
-      }
-
-      const pngUrl = URL.createObjectURL(pngBlob)
-      const link = document.createElement("a")
-      link.href = pngUrl
-      link.download = `location-${payload.location.id}-qr-styled.png`
-      link.click()
-      URL.revokeObjectURL(pngUrl)
-    } finally {
-      setIsDownloadingQr(false)
-    }
-  }
-
   if (loading) {
     return (
       <AppShell>
-        <PageHeader title={t("locationsLoadingTitle")} breadcrumbs={[{ label: t("navLocations"), href: "/locations" }, { label: t("commonLoading") }]} />
-        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">{t("locationsLoadingDetails")}</div>
+        <PageHeader
+          title={t("locationsLoadingTitle")}
+          breadcrumbs={[{ label: t("navLocations"), href: "/locations" }, { label: t("commonLoading") }]}
+        />
+        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+          {t("locationsLoadingDetails")}
+        </div>
       </AppShell>
     )
   }
@@ -156,7 +92,10 @@ export default function LocationDetailPage({
   if (!payload) {
     return (
       <AppShell>
-        <PageHeader title={t("locationsNotFoundTitle")} breadcrumbs={[{ label: t("navLocations"), href: "/locations" }, { label: t("commonNotFound") }]} />
+        <PageHeader
+          title={t("locationsNotFoundTitle")}
+          breadcrumbs={[{ label: t("navLocations"), href: "/locations" }, { label: t("commonNotFound") }]}
+        />
         <div className="flex flex-1 items-center justify-center">
           <div className="text-center">
             <h2 className="text-lg font-semibold">{t("locationsNotFoundTitle")}</h2>
@@ -171,16 +110,12 @@ export default function LocationDetailPage({
   }
 
   const { location, parent, children, qrPayload } = payload
-  const qrStyledPreviewUrl = `/api/locations/${location.id}/qr/styled?size=320`
 
   return (
     <AppShell>
       <PageHeader
         title={location.name}
-        breadcrumbs={[
-          { label: t("navLocations"), href: "/locations" },
-          { label: location.name },
-        ]}
+        breadcrumbs={[{ label: t("navLocations"), href: "/locations" }, { label: location.name }]}
       />
       <div className="app-page">
         <div className="flex items-center justify-between">
@@ -190,7 +125,9 @@ export default function LocationDetailPage({
               {t("locationsBackToList")}
             </Link>
           </Button>
-          <Badge variant="secondary">{t(`locationsKind${location.kind.charAt(0).toUpperCase()}${location.kind.slice(1)}`)}</Badge>
+          <Badge variant="secondary">
+            {t(`locationsKind${location.kind.charAt(0).toUpperCase()}${location.kind.slice(1)}`)}
+          </Badge>
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
@@ -282,7 +219,10 @@ export default function LocationDetailPage({
                           className="pl-8"
                         />
                       </div>
-                      <Select value={assetStatusFilter} onValueChange={(value) => setAssetStatusFilter(value as Asset["status"] | "all")}>
+                      <Select
+                        value={assetStatusFilter}
+                        onValueChange={(value) => setAssetStatusFilter(value as Asset["status"] | "all")}
+                      >
                         <SelectTrigger className="w-[170px]">
                           <SelectValue placeholder={t("filtersAllStatus")} />
                         </SelectTrigger>
@@ -345,7 +285,9 @@ export default function LocationDetailPage({
                                 <TableCell>
                                   <StatusBadge status={asset.status} />
                                 </TableCell>
-                                <TableCell className="text-right text-xs tabular-nums">{formatCurrency(asset.value)}</TableCell>
+                                <TableCell className="text-right text-xs tabular-nums">
+                                  {formatCurrency(asset.value)}
+                                </TableCell>
                               </TableRow>
                             ))
                           )}
@@ -355,8 +297,19 @@ export default function LocationDetailPage({
 
                     <div className="text-xs text-muted-foreground">
                       <div className="flex items-center justify-between">
-                        <span>{t("showingCountOf", { current: assets.length, total: totalAssets, label: t("navAssets").toLowerCase() })}</span>
-                        <DataTablePagination page={page} pageSize={pageSize} total={totalAssets} onPageChange={setPage} />
+                        <span>
+                          {t("showingCountOf", {
+                            current: assets.length,
+                            total: totalAssets,
+                            label: t("navAssets").toLowerCase(),
+                          })}
+                        </span>
+                        <DataTablePagination
+                          page={page}
+                          pageSize={pageSize}
+                          total={totalAssets}
+                          onPageChange={setPage}
+                        />
                       </div>
                     </div>
                   </>
@@ -373,7 +326,11 @@ export default function LocationDetailPage({
                   <p className="text-xs text-muted-foreground">{t("locationsNoChildren")}</p>
                 ) : (
                   children.map((child) => (
-                    <Link key={child.id} href={`/locations/${child.id}`} className="block rounded-md border px-3 py-2 hover:bg-muted/40">
+                    <Link
+                      key={child.id}
+                      href={`/locations/${child.id}`}
+                      className="block rounded-md border px-3 py-2 hover:bg-muted/40"
+                    >
                       <p className="text-sm font-medium">{child.name}</p>
                       <p className="text-xs text-muted-foreground">{child.path}</p>
                     </Link>
@@ -384,21 +341,14 @@ export default function LocationDetailPage({
           </div>
 
           <div>
-            <Card className="app-surface">
-              <CardHeader>
-                <CardTitle className="text-sm font-medium">{t("assetQrCardTitle")}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="mx-auto w-full max-w-[220px] rounded-xl border bg-white p-3">
-                  <img src={qrStyledPreviewUrl} alt={`QR for ${location.name}`} className="mx-auto h-auto w-full" />
-                </div>
-                <p className="truncate font-mono text-xs text-muted-foreground" title={qrPayload}>{qrPayload}</p>
-                <Button size="sm" variant="outline" className="w-full" onClick={handleDownloadStyledQrPng} disabled={isDownloadingQr}>
-                  {isDownloadingQr ? <Upload className="mr-1.5 size-3.5 animate-spin" /> : <ArrowDownToLine className="mr-1.5 size-3.5" />}
-                  {isDownloadingQr ? t("assetPreparingPng") : t("assetDownloadPng")}
-                </Button>
-              </CardContent>
-            </Card>
+            <StyledQrCodeCard
+              title={t("assetQrCardTitle")}
+              payload={qrPayload}
+              entityName={location.name}
+              downloadFileName={`location-${location.id}-qr-styled.png`}
+              downloadLabel={t("assetDownloadPng")}
+              preparingLabel={t("assetPreparingPng")}
+            />
           </div>
         </div>
       </div>

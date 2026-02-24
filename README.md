@@ -24,43 +24,54 @@ Self-hostable, open-source asset management app with QR labels, borrowing, locat
 
 ## Testing
 
-- Run all tests: `npm test`
-- Watch mode: `npm run test:watch`
-- Coverage: `npm run test:coverage`
+- Run all tests (unit + acceptance): `npm test`
+- Watch mode (unit): `npm run test:watch`
+- Coverage (unit): `npm run test:coverage`
 - Run only unit tests: `npm run test:unit`
 - Unit watch mode: `npm run test:unit:watch`
 - Unit coverage (enforced 89% statements/lines): `npm run test:unit:coverage`
+- Run only acceptance tests: `npm run test:acceptance`
+- Acceptance watch mode: `npm run test:acceptance:watch`
+
+## Code Quality
+
+- Lint: `npm run lint`
+- Format write: `npm run format`
+- Format check: `npm run format:check`
+
+## Database Migrations (Drizzle)
+
+- Migrations are stored in `drizzle/sqlite` and `drizzle/pg`
+- App startup runs pending migrations automatically before repository access
+- Generate SQLite migration: `npm run db:generate:sqlite`
+- Generate Postgres migration: `npm run db:generate:pg`
+- Run SQLite migrations manually: `npm run db:migrate:sqlite`
+- Run Postgres migrations manually: `npm run db:migrate:pg`
 
 ### Unit test structure
 
 - `tests/unit/lib/`
-   - `api-error.test.ts` → `lib/api-error.ts`
-   - `auth-session.test.ts` → `lib/auth-session.ts`
-   - `db-runtime.test.ts` → `lib/db.ts`
-   - `i18n.test.ts` → `lib/i18n.ts`
-   - `intl.test.ts` → `lib/intl.ts`
-   - `oidc.test.ts` → `lib/oidc.ts`
-   - `qr-payload.test.ts` → `lib/qr-payload.ts`
-   - `request-security.test.ts` → `lib/request-security.ts`
-   - `security-utils.test.ts` → `lib/security-utils.ts`
+  - `api-error.test.ts` → `lib/api-error.ts`
+  - `auth-session.test.ts` → `lib/auth-session.ts`
+  - `db-runtime.test.ts` → `lib/db.ts`
+  - `i18n.test.ts` → `lib/i18n.ts`
+  - `intl.test.ts` → `lib/intl.ts`
+  - `oidc.test.ts` → `lib/oidc.ts`
+  - `qr-payload.test.ts` → `lib/qr-payload.ts`
+  - `request-security.test.ts` → `lib/request-security.ts`
+  - `security-utils.test.ts` → `lib/security-utils.ts`
 - `tests/unit/components/`
-   - `app-runtime-provider.test.tsx` → `components/app-runtime-provider.tsx`
-   - `data-table-pagination.test.tsx` → `components/ui/data-table-pagination.tsx`
-   - `status-badge.test.tsx` → `components/status-badge.tsx`
+  - `app-runtime-provider.test.tsx` → `components/app-runtime-provider.tsx`
+  - `data-table-pagination.test.tsx` → `components/ui/data-table-pagination.tsx`
+  - `status-badge.test.tsx` → `components/status-badge.tsx`
 - `tests/unit/hooks/`
-   - `use-current-user.test.tsx` → `hooks/use-current-user.ts`
-   - `use-mobile.test.tsx` → `hooks/use-mobile.ts`
-- `tests/unit/api/`
-   - `incidents-route.test.ts` → `app/api/incidents/route.ts` (validation, pagination/filtering, activity recording)
-   - `incidents-id-route.test.ts` → `app/api/incidents/[id]/route.ts` (404/400/200 branches, delete file cleanup)
-   - `search-route.test.ts` → `app/api/search/route.ts` (query normalization, truncation, related-match classification)
-
-Current test suite includes:
+  - `use-current-user.test.tsx` → `hooks/use-current-user.ts`
+  - `use-mobile.test.tsx` → `hooks/use-mobile.ts`
+    Current test suite includes:
 
 - Unit tests for i18n and API error sanitization
 - DB runtime tests covering both SQLite and Postgres client selection/execution paths
-- Acceptance-style API tests for incident list/create/update/delete flows (including pagination and attachment cleanup side effects)
-
+- Acceptance tests for authenticated page rendering and runtime behavior
 
 ## Authentication (OIDC)
 

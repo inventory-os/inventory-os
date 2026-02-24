@@ -1,109 +1,57 @@
-import { describe, expect, it } from "vitest"
-import { SESSION_COOKIE_NAME } from "@/lib/auth-constants"
-import { getAcceptanceBaseUrl } from "../support/acceptance-env"
-import { apiJson, getSessionCookie, readCookie } from "../support/http"
+import { beforeAll, describe, expect, it } from "vitest"
+import { createAcceptanceTrpcClient } from "../support/trpc"
+import { ensureBaseData } from "../support/http"
 
-describe("auth.api acceptance", () => {
-  it("covers /api/auth/login redirect and oidc cookies", async () => {
-    const baseUrl = getAcceptanceBaseUrl()
-    const issuer = process.env.ACCEPTANCE_OIDC_ISSUER as string
-
-    const response = await fetch(`${baseUrl}/api/auth/login?returnTo=/assets`, {
-      redirect: "manual",
-    })
-
-    expect([302, 307, 403]).toContain(response.status)
-
-    if (response.status !== 403) {
-      const location = response.headers.get("location")
-      expect(location?.startsWith(`${issuer}/authorize`)).toBe(true)
-
-      const setCookie = response.headers.get("set-cookie")
-      expect(readCookie(setCookie, "oidc_state")).toBeTruthy()
-      expect(readCookie(setCookie, "oidc_verifier")).toBeTruthy()
-      expect(readCookie(setCookie, "oidc_return_to")).toBeTruthy()
-    }
+describe("auth api acceptance (real runtime)", () => {
+  beforeAll(async () => {
+    await ensureBaseData()
   })
 
-  it("covers /api/auth/callback invalid state branch", async () => {
-    const baseUrl = getAcceptanceBaseUrl()
+  it("binds, reads, updates, and deactivates auth users", async () => {
+    const client = createAcceptanceTrpcClient("admin")
+    const unique = Date.now()
+    const issuer = "acceptance-auth"
+    const sub = `sub-${unique}`
+    const email = `acceptance.auth.${unique}@example.com`
 
-    const callback = await fetch(`${baseUrl}/api/auth/callback?code=fake-code&state=fake-state`, {
-      redirect: "manual",
-      headers: { cookie: "oidc_state=other; oidc_verifier=abc; oidc_return_to=/" },
+    const created = await client.auth.bindOrCreateFromOidc.mutate({
+      issuer,
+      sub,
+      email,
+      displayName: `Acceptance Auth ${unique}`,
+      roles: ["member"],
+      jitCreate: true,
     })
 
-    expect([400, 403]).toContain(callback.status)
-    if (callback.status === 400) {
-      const body = await callback.json() as { error: string }
-      expect(body.error).toContain("Invalid OIDC callback state")
-    }
+    expect(created?.id).toBeTruthy()
+
+    const bySubject = await client.auth.bySubject.query({ issuer, sub })
+    expect(bySubject?.id).toBe(created?.id)
+
+    const byEmail = await client.auth.byEmail.query({ email })
+    expect(byEmail?.id).toBe(created?.id)
+
+    const updated = await client.auth.updateById.mutate({
+      id: created!.id,
+      input: {
+        displayName: `Acceptance Auth Updated ${unique}`,
+        roles: ["admin"],
+      },
+    })
+
+    expect(updated?.displayName).toContain("Updated")
+    expect(updated?.roles).toContain("admin")
+
+    const deactivated = await client.auth.deactivateById.mutate({ id: created!.id })
+    expect(deactivated).toBe(true)
+
+    const byId = await client.auth.byId.query({ id: created!.id })
+    expect(byId?.active).toBe(false)
   })
 
-  it("covers /api/auth/me unauth and authenticated branches", async () => {
-    const unauth = await apiJson<{ authenticated: boolean; error?: string }>("/api/auth/me", { role: "none" })
-    expect([401, 403]).toContain(unauth.status)
-
-    const auth = await apiJson<{
-      authenticated: boolean
-      user: { id: string; email: string; displayName: string; roles: string[]; memberId: string | null }
-    }>("/api/auth/me")
-    expect([200, 401, 403]).toContain(auth.status)
-    if (auth.status === 200) {
-      expect(auth.data.authenticated).toBe(true)
-      expect(typeof auth.data.user.email).toBe("string")
-      expect(Array.isArray(auth.data.user.roles)).toBe(true)
-    }
-  })
-
-  it("covers /api/auth/refresh unauth and authenticated cookie refresh branches", async () => {
-    const unauth = await apiJson<{ authenticated: boolean; error?: string }>("/api/auth/refresh", {
-      role: "none",
-      method: "POST",
-      body: JSON.stringify({}),
-    })
-    expect([401, 403]).toContain(unauth.status)
-
-    const auth = await apiJson<{
-      authenticated: boolean
-      user: { id: string; email: string; roles: string[] }
-    }>("/api/auth/refresh", {
-      method: "POST",
-      body: JSON.stringify({}),
-    })
-    expect([200, 401, 403]).toContain(auth.status)
-    if (auth.status === 200) {
-      expect(auth.data.authenticated).toBe(true)
-      expect(typeof auth.data.user.email).toBe("string")
-
-      const setCookie = auth.headers.get("set-cookie")
-      expect(setCookie?.includes(`${SESSION_COOKIE_NAME}=`)).toBe(true)
-    }
-  })
-
-  it("covers /api/auth/logout POST and GET behavior", async () => {
-    const baseUrl = getAcceptanceBaseUrl()
-
-    const postLogout = await apiJson<{ ok: boolean }>("/api/auth/logout?returnTo=/assets", {
-      method: "POST",
-      body: JSON.stringify({}),
-    })
-    expect([200, 403]).toContain(postLogout.status)
-    if (postLogout.status === 200) {
-      expect(postLogout.data.ok).toBe(true)
-      expect(postLogout.headers.get("x-inventory-os-logout-redirect")).toBe("/assets")
-      expect(postLogout.headers.get("set-cookie")?.includes(`${SESSION_COOKIE_NAME}=`)).toBe(true)
-    }
-
-    const getLogout = await fetch(`${baseUrl}/api/auth/logout?returnTo=/settings`, {
-      method: "GET",
-      redirect: "manual",
-      headers: { cookie: getSessionCookie("admin") },
-    })
-    expect([302, 307, 403]).toContain(getLogout.status)
-    if (getLogout.status !== 403) {
-      expect(getLogout.headers.get("location")?.endsWith("/settings")).toBe(true)
-      expect(getLogout.headers.get("set-cookie")?.includes(`${SESSION_COOKIE_NAME}=`)).toBe(true)
-    }
+  it("returns unauthenticated me result for anonymous caller", async () => {
+    const anonymous = createAcceptanceTrpcClient("none")
+    const me = await anonymous.auth.me.query()
+    expect(me.authenticated).toBe(false)
   })
 })

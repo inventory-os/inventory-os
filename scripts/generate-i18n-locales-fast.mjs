@@ -175,10 +175,7 @@ function protectTokens(input) {
 }
 
 function restoreTokens(input, protectedParts) {
-  return protectedParts.reduce(
-    (value, part, index) => value.replace(new RegExp(`__TK_${index}__`, "g"), part),
-    input,
-  )
+  return protectedParts.reduce((value, part, index) => value.replace(new RegExp(`__TK_${index}__`, "g"), part), input)
 }
 
 function chunk(values, size) {

@@ -1,19 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
-import { SESSION_COOKIE_NAME } from "@/lib/auth-constants"
+import { SESSION_COOKIE_NAME } from "@/lib/utils/auth-constants"
 
-const PUBLIC_PATH_PREFIXES = [
-  "/api/auth/login",
-  "/api/auth/callback",
-  "/api/qr/",
-  "/api/setup/",
-  "/qr/",
-  "/_next/",
-  "/favicon.ico",
-]
+const PUBLIC_PATH_PREFIXES = ["/api/auth/login", "/api/auth/callback", "/api/qr/", "/qr/", "/_next/", "/favicon.ico"]
 
 const MEMBER_BLOCKED_PAGE_PREFIXES = ["/team", "/settings", "/health", "/incidents"]
 const MEMBER_BLOCKED_PAGE_PATTERNS = [/^\/assets\/[^/]+\/edit$/]
-const MEMBER_API_MANAGEMENT_PREFIXES = ["/api/members", "/api/integrations", "/api/settings", "/api/incidents"]
+const MEMBER_API_MANAGEMENT_PREFIXES: string[] = []
 
 type SessionPayload = {
   uid: string
@@ -130,7 +122,7 @@ export async function proxy(request: NextRequest) {
         if (isMemberBlockedApi(pathname)) {
           return NextResponse.json({ error: "Forbidden" }, { status: 403 })
         }
-        if (!isReadOnlyMethod(request.method) && pathname !== "/api/auth/logout" && pathname !== "/api/auth/refresh") {
+        if (!isReadOnlyMethod(request.method) && pathname !== "/api/auth/logout") {
           return NextResponse.json({ error: "Forbidden" }, { status: 403 })
         }
       } else if (isMemberBlockedPage(pathname)) {
