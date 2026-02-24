@@ -6,16 +6,53 @@ import { drizzle as drizzlePg } from "drizzle-orm/node-postgres"
 import { migrate as migratePg } from "drizzle-orm/node-postgres/migrator"
 import { Pool } from "pg"
 
-async function migrateDatabase() {
-  const dbClient = process.env.DB_CLIENT ?? (process.env.DATABASE_URL?.startsWith("postgres") ? "pg" : "sqlite3")
+const DEFAULT_PG_STARTUP_WAIT_MS = 40_000
+const DEFAULT_PG_RETRY_INTERVAL_MS = 2_000
 
-  if (dbClient === "pg") {
-    const databaseUrl = process.env.DATABASE_URL
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
-    if (!databaseUrl) {
-      throw new Error("DATABASE_URL must be set when DB_CLIENT=pg")
+function getErrorCode(error) {
+  if (error && typeof error === "object") {
+    if ("code" in error && typeof error.code === "string") {
+      return error.code
     }
 
+    if ("cause" in error && error.cause && typeof error.cause === "object") {
+      if ("code" in error.cause && typeof error.cause.code === "string") {
+        return error.cause.code
+      }
+    }
+  }
+
+  return undefined
+}
+
+function shouldRetryPgStartupError(error) {
+  const code = getErrorCode(error)
+
+  return [
+    "ENOTFOUND",
+    "EAI_AGAIN",
+    "ECONNREFUSED",
+    "ECONNRESET",
+    "ETIMEDOUT",
+    "ENETUNREACH",
+    "57P03",
+  ].includes(code)
+}
+
+async function migratePostgresWithRetry(databaseUrl) {
+  const maxWaitMs = Number(process.env.PG_STARTUP_MAX_WAIT_MS ?? DEFAULT_PG_STARTUP_WAIT_MS)
+  const retryIntervalMs = Number(process.env.PG_STARTUP_RETRY_INTERVAL_MS ?? DEFAULT_PG_RETRY_INTERVAL_MS)
+  const maxWaitMsSafe = Number.isFinite(maxWaitMs) && maxWaitMs >= 0 ? maxWaitMs : DEFAULT_PG_STARTUP_WAIT_MS
+  const retryIntervalMsSafe =
+    Number.isFinite(retryIntervalMs) && retryIntervalMs > 0 ? retryIntervalMs : DEFAULT_PG_RETRY_INTERVAL_MS
+  const deadline = Date.now() + maxWaitMsSafe
+  let attempt = 1
+
+  while (true) {
     const pool = new Pool({
       connectionString: databaseUrl,
       max: 5,
@@ -26,9 +63,39 @@ async function migrateDatabase() {
       await migratePg(db, {
         migrationsFolder: path.join(process.cwd(), "drizzle/pg"),
       })
+      return
+    } catch (error) {
+      const shouldRetry = shouldRetryPgStartupError(error)
+      const now = Date.now()
+      const shouldWaitAgain = shouldRetry && now < deadline
+
+      if (!shouldWaitAgain) {
+        throw error
+      }
+
+      const timeLeftMs = Math.max(0, deadline - now)
+      console.warn(
+        `Postgres not ready yet (attempt ${attempt}). Retrying in ${retryIntervalMsSafe}ms (up to ${timeLeftMs}ms remaining)...`,
+      )
+      attempt += 1
+      await sleep(retryIntervalMsSafe)
     } finally {
       await pool.end()
     }
+  }
+}
+
+async function migrateDatabase() {
+  const dbClient = process.env.DB_CLIENT ?? (process.env.DATABASE_URL?.startsWith("postgres") ? "pg" : "sqlite3")
+
+  if (dbClient === "pg") {
+    const databaseUrl = process.env.DATABASE_URL
+
+    if (!databaseUrl) {
+      throw new Error("DATABASE_URL must be set when DB_CLIENT=pg")
+    }
+
+    await migratePostgresWithRetry(databaseUrl)
 
     return
   }

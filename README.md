@@ -121,6 +121,8 @@ Use in `.env.local`:
 
 - `DB_CLIENT=pg`
 - `DATABASE_URL=postgresql://user:password@host:5432/inventory_os`
+- `PG_STARTUP_MAX_WAIT_MS=40000` (optional, default 40s)
+- `PG_STARTUP_RETRY_INTERVAL_MS=2000` (optional)
 
 ## QR URL Configuration
 
