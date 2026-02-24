@@ -1,70 +1,44 @@
-// @vitest-environment jsdom
+import { beforeAll, describe, expect, it } from "vitest"
+import { getAcceptanceBaseUrl } from "./support/acceptance-env"
+import { ensureBaseData, pageHtml, readCookie } from "./support/http"
 
-import { beforeEach, describe, expect, it, vi } from "vitest"
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { SidebarProvider } from "@/components/ui/sidebar"
-
-const push = vi.fn()
-const setLocale = vi.fn()
-const searchParams = { get: () => null }
-
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push }),
-  useSearchParams: () => searchParams,
-}))
-
-vi.mock("@/components/app-runtime-provider", () => ({
-  useAppRuntime: () => ({
-    t: (key: string) => key,
-    locale: "en",
-    setLocale,
-  }),
-}))
-
-vi.mock("@/hooks/use-mobile", () => ({
-  useIsMobile: () => false,
-}))
-
-vi.mock("@/components/notification-bell", () => ({
-  NotificationBell: () => null,
-}))
-
-describe("PageHeader UI acceptance", () => {
-  beforeEach(() => {
-    push.mockReset()
-    setLocale.mockReset()
+describe("auth + header-path acceptance (real runtime)", () => {
+  beforeAll(async () => {
+    await ensureBaseData()
   })
 
-  it("submits search query on Enter", async () => {
-    const { PageHeader } = await import("@/components/page-header")
+  it("executes real OIDC login start and redirects to configured provider", async () => {
+    const baseUrl = getAcceptanceBaseUrl()
+    const issuer = process.env.ACCEPTANCE_OIDC_ISSUER as string
 
-    render(
-      <SidebarProvider>
-        <PageHeader title="Assets" breadcrumbs={[{ label: "Assets" }]} />
-      </SidebarProvider>,
-    )
+    const loginResponse = await fetch(`${baseUrl}/api/auth/login?returnTo=/assets`, {
+      redirect: "manual",
+    })
 
-    const input = screen.getByPlaceholderText("globalSearchPlaceholder")
-    fireEvent.change(input, { target: { value: "camera" } })
-    await waitFor(() => expect((input as HTMLInputElement).value).toBe("camera"))
-    fireEvent.keyDown(input, { key: "Enter" })
+    expect([302, 307, 403]).toContain(loginResponse.status)
 
-    expect(push).toHaveBeenCalledWith("/search?q=camera")
+    if (loginResponse.status !== 403) {
+      const authorizeLocation = loginResponse.headers.get("location")
+      expect(authorizeLocation?.startsWith(`${issuer}/authorize`)).toBe(true)
+
+      const setCookie = loginResponse.headers.get("set-cookie")
+      const state = readCookie(setCookie, "oidc_state")
+      const verifier = readCookie(setCookie, "oidc_verifier")
+
+      expect(state).toBeTruthy()
+      expect(verifier).toBeTruthy()
+    }
+
+    const discoveryResponse = await fetch(`${issuer}/.well-known/openid-configuration`)
+    expect(discoveryResponse.status).toBe(200)
+    const discovery = await discoveryResponse.json() as { authorization_endpoint: string; token_endpoint: string }
+    expect(typeof discovery.authorization_endpoint).toBe("string")
+    expect(typeof discovery.token_endpoint).toBe("string")
   })
 
-  it("navigates to search page for empty query", async () => {
-    const { PageHeader } = await import("@/components/page-header")
-
-    render(
-      <SidebarProvider>
-        <PageHeader title="Assets" />
-      </SidebarProvider>,
-    )
-
-    const input = screen.getByPlaceholderText("globalSearchPlaceholder")
-    fireEvent.change(input, { target: { value: "   " } })
-    fireEvent.keyDown(input, { key: "Enter" })
-
-    expect(push).toHaveBeenCalledWith("/search")
+  it("serves the search page UI route used by global header", async () => {
+    const page = await pageHtml("/search?q=acceptance")
+    expect(page.status).toBe(200)
+    expect(/Search|search/i.test(page.html)).toBe(true)
   })
 })

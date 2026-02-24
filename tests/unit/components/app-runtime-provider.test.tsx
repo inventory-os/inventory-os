@@ -9,18 +9,21 @@ vi.mock("next/navigation", () => ({
 }))
 
 function RuntimeProbe() {
-  const { locale, setLocale, t } = useAppRuntime()
+  const { locale, loading, setLocale, t, formatCurrency, formatDate } = useAppRuntime()
 
   return (
     <div>
       <p data-testid="locale">{locale}</p>
+      <p data-testid="loading">{loading ? "loading" : "ready"}</p>
       <p data-testid="welcome">{t("welcomeTitle")}</p>
+      <p data-testid="currency">{formatCurrency(1200.5, { maximumFractionDigits: 2 })}</p>
+      <p data-testid="date">{formatDate("2024-01-01T00:00:00.000Z", { year: "numeric" })}</p>
       <button onClick={() => setLocale("de")}>set-de</button>
     </div>
   )
 }
 
-describe("AppRuntimeProvider UI behavior", () => {
+describe("AppRuntimeProvider", () => {
   beforeEach(() => {
     const store = new Map<string, string>()
 
@@ -38,21 +41,24 @@ describe("AppRuntimeProvider UI behavior", () => {
     })
 
     localStorage.clear()
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        setup: {
-          setupComplete: true,
-          appName: "Inventory OS",
-          organizationName: "Org",
-          locale: "en",
-          currency: "EUR",
-        },
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          setup: {
+            setupComplete: true,
+            appName: "Inventory OS",
+            organizationName: "Org",
+            locale: "en",
+            currency: "EUR",
+          },
+        }),
       }),
-    }))
+    )
   })
 
-  it("auto-detects browser locale when no saved preference exists", async () => {
+  it("auto-detects browser locale and updates loading state", async () => {
     Object.defineProperty(window.navigator, "languages", {
       configurable: true,
       value: ["de-DE", "en-US"],
@@ -65,6 +71,9 @@ describe("AppRuntimeProvider UI behavior", () => {
     )
 
     await waitFor(() => expect(screen.getByTestId("locale").textContent).toBe("de"))
+    await waitFor(() => expect(screen.getByTestId("loading").textContent).toBe("ready"))
+    expect(screen.getByTestId("currency").textContent).toContain("€")
+    expect(screen.getByTestId("date").textContent).toContain("2024")
   })
 
   it("uses saved locale preference and persists manual changes", async () => {
@@ -81,5 +90,14 @@ describe("AppRuntimeProvider UI behavior", () => {
     fireEvent.click(screen.getByRole("button", { name: "set-de" }))
 
     expect(localStorage.getItem("inventory-os.locale")).toBe("de")
+  })
+
+  it("throws when hook is used outside provider", () => {
+    function InvalidConsumer() {
+      useAppRuntime()
+      return null
+    }
+
+    expect(() => render(<InvalidConsumer />)).toThrow("useAppRuntime must be used within AppRuntimeProvider")
   })
 })
